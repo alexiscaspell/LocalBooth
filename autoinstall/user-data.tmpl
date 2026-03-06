@@ -1,0 +1,69 @@
+#cloud-config
+autoinstall:
+  version: 1
+
+  # ── Locale & keyboard ────────────────────────────────────────────────
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+
+  # ── Network — disabled during install (fully offline) ────────────────
+  network:
+    version: 2
+    ethernets: {}
+
+  # ── Storage — use the entire disk, LVM ───────────────────────────────
+  storage:
+    layout:
+      name: lvm
+
+  # ── Identity ─────────────────────────────────────────────────────────
+  identity:
+    hostname: localbooth
+    username: dev
+    # Password: "changeme"
+    # Generate a new hash on Ubuntu: openssl passwd -6 "your-password"
+    # The hash below corresponds to "changeme" — REPLACE before production use.
+    password: "$6$xyz$D8kBzfBSEJnTopaz5iBGQBbJ7F5t60fJpIKxKlwMPwYfGczjh9M.Uw0xkOdfPE7LkNRqAsNPTYQiX38.KTRWI0"
+
+  # ── SSH ──────────────────────────────────────────────────────────────
+  ssh:
+    install-server: true
+    allow-pw: true
+
+  # ── APT — offline local repository on the install media ──────────────
+  apt:
+    preserve_sources_list: false
+    primary:
+      - arches: [amd64]
+        uri: "file:///cdrom/repo"
+    geoip: false
+    disable_components: []
+
+  # ── Packages to install ──────────────────────────────────────────────
+  packages:
+    - docker.io
+    - git
+    - curl
+    - build-essential
+    - jq
+    - unzip
+    - htop
+    - ca-certificates
+    - gnupg
+    - openssh-server
+
+  # ── Updates — skip (offline) ─────────────────────────────────────────
+  updates: security
+  package_update: false
+  package_upgrade: false
+
+  # ── Late commands — run after install, inside the target ─────────────
+  late-commands:
+    # Copy the bootstrap script into the installed system
+    - cp /cdrom/bootstrap/bootstrap.sh /target/tmp/bootstrap.sh
+    - chmod +x /target/tmp/bootstrap.sh
+    - curtin in-target --target=/target -- /tmp/bootstrap.sh
+
+  # ── Reboot automatically when done ──────────────────────────────────
+  shutdown: reboot

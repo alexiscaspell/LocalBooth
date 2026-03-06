@@ -16,6 +16,9 @@ repo/local-repo/
 # ── Optional extras (binaries, not versioned by default) ──────────────
 extras/
 
+# ── Install config (contains password in plaintext) ──────────────────
+config/install.conf
+
 # ── Docker ────────────────────────────────────────────────────────────
 .dockerignore
 

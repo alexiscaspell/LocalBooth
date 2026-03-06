@@ -83,6 +83,13 @@ mkdir -p "${BOOTSTRAP_DEST}"
 cp "${BOOTSTRAP_DIR}/bootstrap.sh" "${BOOTSTRAP_DEST}/bootstrap.sh"
 chmod +x "${BOOTSTRAP_DEST}/bootstrap.sh"
 
+# Inject bootstrap.conf so the bootstrap script knows the configured username
+INSTALL_CONF="${ROOT_DIR}/config/install.conf"
+if [[ -f "${INSTALL_CONF}" ]]; then
+    cp "${INSTALL_CONF}" "${BOOTSTRAP_DEST}/bootstrap.conf"
+    log "Injected bootstrap.conf with install configuration"
+fi
+
 # ── Inject extras directory (for optional kubectl, etc.) ──────────────
 EXTRAS_SRC="${ROOT_DIR}/extras"
 if [[ -d "${EXTRAS_SRC}" ]]; then

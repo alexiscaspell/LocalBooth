@@ -11,7 +11,14 @@ set -euo pipefail
 LOGFILE="/var/log/localbooth-bootstrap.log"
 exec > >(tee -a "$LOGFILE") 2>&1
 
+# Read the configured username, fall back to "dev"
+BOOTSTRAP_CONF="/cdrom/bootstrap/bootstrap.conf"
 DEV_USER="dev"
+if [[ -f "${BOOTSTRAP_CONF}" ]]; then
+    # shellcheck source=/dev/null
+    source "${BOOTSTRAP_CONF}"
+    DEV_USER="${INSTALL_USERNAME:-dev}"
+fi
 WORKSPACE="/home/${DEV_USER}/workspace"
 
 log() { echo "[localbooth] $(date '+%F %T') — $*"; }

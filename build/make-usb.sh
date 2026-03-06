@@ -17,6 +17,8 @@ OUTPUT_DIR="${ROOT_DIR}/output"
 IMAGE_NAME="localbooth-builder"
 ISO_CACHE_DIR="${ROOT_DIR}/.iso-cache"
 FLASH="true"
+SKIP_CONFIG="false"
+CONF_FILE="${ROOT_DIR}/config/install.conf"
 
 log() { echo "[localbooth] $(date '+%F %T') — $*"; }
 
@@ -27,10 +29,20 @@ while [[ $# -gt 0 ]]; do
             FLASH="false"
             shift
             ;;
+        --defaults)
+            SKIP_CONFIG="defaults"
+            shift
+            ;;
+        --no-configure)
+            SKIP_CONFIG="true"
+            shift
+            ;;
         -h|--help)
-            echo "Usage: $0 [--no-flash]"
+            echo "Usage: $0 [--no-flash] [--defaults] [--no-configure]"
             echo ""
-            echo "  --no-flash   Build the ISO but don't flash to USB"
+            echo "  --no-flash      Build the ISO but don't flash to USB"
+            echo "  --defaults      Use default values without prompting"
+            echo "  --no-configure  Skip configuration (use existing install.conf)"
             echo ""
             echo "Requires: Docker"
             exit 0
@@ -54,6 +66,20 @@ if ! docker info &>/dev/null; then
     exit 1
 fi
 
+# ── Configure ────────────────────────────────────────────────────────
+if [[ "${SKIP_CONFIG}" == "defaults" ]]; then
+    bash "${SCRIPT_DIR}/configure.sh" --defaults
+elif [[ "${SKIP_CONFIG}" == "false" ]]; then
+    bash "${SCRIPT_DIR}/configure.sh"
+else
+    if [[ ! -f "${CONF_FILE}" ]]; then
+        log "No config/install.conf found — running configuration"
+        bash "${SCRIPT_DIR}/configure.sh"
+    else
+        log "Using existing config/install.conf"
+    fi
+fi
+
 # ── Prepare directories ──────────────────────────────────────────────
 mkdir -p "${OUTPUT_DIR}" "${ISO_CACHE_DIR}"
 
@@ -73,6 +99,7 @@ docker run --rm \
     --platform linux/amd64 \
     -v "${OUTPUT_DIR}:/output" \
     -v "${ISO_CACHE_DIR}:/iso-cache" \
+    -v "${ROOT_DIR}/config:/localbooth/config" \
     "${IMAGE_NAME}"
 
 # ── Find the output ISO ──────────────────────────────────────────────

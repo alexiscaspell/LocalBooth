@@ -31,6 +31,10 @@ else
     wget --no-verbose --show-progress -O "${ISO_FILE}" "${ISO_URL}"
 fi
 
+# ── STEP 1.5 — Generate user-data from config ────────────────────────
+log "=== Generating autoinstall user-data ==="
+bash "${ROOT_DIR}/build/generate-userdata.sh" "${ROOT_DIR}"
+
 # ── STEP 2 — Download .deb packages ──────────────────────────────────
 log "=== Downloading packages ==="
 bash "${ROOT_DIR}/packages/download-packages.sh"
