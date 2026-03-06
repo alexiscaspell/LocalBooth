@@ -1,13 +1,11 @@
 
-![# LocalBooth](logo.png)
-
-
-Reusable, fully-offline USB installer for **Ubuntu Server LTS** with automated provisioning.
-
-Insert the USB into any machine, boot from it, and walk away.  
-Minutes later you have a fully configured development workstation — no internet required.
+<center>
+ <img src='logo.png' width='50%' />
+</center>
 
 ---
+
+Insert the USB into any machine, boot from it, and walk away.  
 
 ## What It Does
 
