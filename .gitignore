@@ -1,0 +1,24 @@
+# ── Build artifacts ────────────────────────────────────────────────────
+*.iso
+iso/extracted/
+iso/mbr.bin
+output/
+
+# ── ISO cache (reused between Docker builds) ─────────────────────────
+.iso-cache/
+
+# ── Downloaded .deb packages (large, reproducible) ────────────────────
+packages/debs/
+
+# ── Generated local APT repository ───────────────────────────────────
+repo/local-repo/
+
+# ── Optional extras (binaries, not versioned by default) ──────────────
+extras/
+
+# ── Docker ────────────────────────────────────────────────────────────
+.dockerignore
+
+# ── OS junk ───────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

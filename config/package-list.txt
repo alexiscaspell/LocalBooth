@@ -1,0 +1,28 @@
+# LocalBooth — packages to include in the offline USB installer.
+# One package per line. Comments and blank lines are ignored.
+# These packages (and all their dependencies) will be downloaded
+# by packages/download-packages.sh and served from the local repo.
+
+# --- container runtime ---
+docker.io
+
+# --- version control ---
+git
+
+# --- networking / transfer ---
+curl
+ca-certificates
+gnupg
+
+# --- build toolchain ---
+build-essential
+
+# --- JSON / archive utilities ---
+jq
+unzip
+
+# --- system monitoring ---
+htop
+
+# --- SSH server (pulled by autoinstall, listed here for the local repo) ---
+openssh-server
