@@ -197,7 +197,11 @@ log "Unmounting ${DEVICE}"
 if [[ "${OS}" == "Darwin" ]]; then
     diskutil unmountDisk "${DEVICE}" 2>/dev/null || true
 else
-    umount "${DEVICE}"* 2>/dev/null || true
+    # Unmount all partitions of this device
+    for part in "${DEVICE}"?*; do
+        sudo umount "${part}" 2>/dev/null || true
+    done
+    sudo umount "${DEVICE}" 2>/dev/null || true
 fi
 
 # ── Write to USB ─────────────────────────────────────────────────────
@@ -230,7 +234,7 @@ if [[ "${WRITABLE}" == "true" ]]; then
         log "Wiping existing partition table on ${DEVICE}"
         sudo wipefs -af "${DEVICE}"
         log "Partitioning ${DEVICE} as MBR + FAT32"
-        echo ',,0C,*' | sudo sfdisk --label dos --wipe always "${DEVICE}"
+        echo ',,0C,*' | sudo sfdisk --force --label dos --wipe always "${DEVICE}"
         sudo mkfs.vfat -F 32 -n LOCALBOOTH "${DEVICE}1"
 
         USB_MOUNT=$(mktemp -d)
