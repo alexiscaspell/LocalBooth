@@ -32,7 +32,7 @@ LocalBooth/
 │   ├── make-usb.sh              # One command: build ISO + flash USB (uses Docker)
 │   ├── flash-usb.sh             # Flash an ISO to USB (macOS & Linux)
 │   ├── build-iso-in-docker.sh   # Runs inside the Docker container
-│   └── build-usb.sh             # Native Linux build (no Docker)
+│   └── make-usb-native.sh       # Native Linux build (no Docker)
 ├── autoinstall/
 │   ├── user-data                # cloud-init autoinstall config
 │   └── meta-data                # (empty, required by cloud-init)
@@ -140,7 +140,7 @@ The system installs itself with zero interaction using your configured credentia
 If you're already on Ubuntu 24.04, you can skip Docker and build directly:
 
 ```bash
-sudo ./build/build-usb.sh
+sudo ./build/make-usb-native.sh
 ```
 
 Then flash:
@@ -181,7 +181,7 @@ Extracts the ISO, injects autoinstall configs, the local repo, the bootstrap scr
 
 ### Rebuild the ISO
 
-The master `build/build-usb.sh` handles rebuilding. If you want to rebuild manually after making changes to the extracted tree:
+The master `build/make-usb-native.sh` handles rebuilding. If you want to rebuild manually after making changes to the extracted tree:
 
 ```bash
 xorriso -as mkisofs \
@@ -215,7 +215,7 @@ Then rebuild:
 ```bash
 sudo ./packages/download-packages.sh
 sudo ./repo/create-local-repo.sh
-sudo ./build/build-usb.sh --iso iso/ubuntu-server.iso
+sudo ./build/make-usb-native.sh --iso iso/ubuntu-server.iso
 ```
 
 ### Change user, password, hostname, or other settings
