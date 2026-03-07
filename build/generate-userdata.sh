@@ -88,11 +88,9 @@ autoinstall:
 
   apt:
     preserve_sources_list: false
-    primary:
-      - arches: [amd64]
-        uri: "file:///cdrom/repo"
+    sources_list: |
+      deb [trusted=yes] file:///cdrom/repo ./
     geoip: false
-    disable_components: []
 
   packages:
 $(echo -e "${PACKAGES_YAML}")

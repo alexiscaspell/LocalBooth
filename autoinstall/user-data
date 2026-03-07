@@ -34,11 +34,9 @@ autoinstall:
   # ── APT — offline local repository on the install media ──────────────
   apt:
     preserve_sources_list: false
-    primary:
-      - arches: [amd64]
-        uri: "file:///cdrom/repo"
+    sources_list: |
+      deb [trusted=yes] file:///cdrom/repo ./
     geoip: false
-    disable_components: []
 
   # ── Packages to install ──────────────────────────────────────────────
   packages:
