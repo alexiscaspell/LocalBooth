@@ -30,6 +30,9 @@ LocalBooth/
 ├── .gitignore
 ├── build/
 │   ├── make-usb.sh              # One command: build ISO + flash USB (uses Docker)
+│   ├── update-config.sh         # Quick config update (patches existing ISO)
+│   ├── update-usb.sh            # Update config directly on a writable USB
+│   ├── configure.sh             # Interactive configuration wizard
 │   ├── flash-usb.sh             # Flash an ISO to USB (macOS & Linux)
 │   ├── build-iso-in-docker.sh   # Runs inside the Docker container
 │   └── make-usb-native.sh       # Native Linux build (no Docker)
@@ -116,34 +119,63 @@ After configuration, the script will:
 4. Show connected disks and ask which one is the USB
 5. Flash the ISO to the USB (with safety checks)
 
-### 3. Build only (don't flash)
+### 3. Build + writable USB (recommended for multi-machine setups)
+
+```bash
+./build/make-usb.sh --writable
+```
+
+Creates a **FAT32 USB** instead of raw-flashing the ISO. The USB is writable, so you can update the config later without re-flashing. Requires UEFI boot (most modern hardware).
+
+### 4. Build only (don't flash)
 
 ```bash
 ./build/make-usb.sh --no-flash
 ```
 
-### 4. Skip prompts (use defaults or existing config)
+### 5. Skip prompts (use defaults or existing config)
 
 ```bash
 ./build/make-usb.sh --defaults      # use all defaults without asking
 ./build/make-usb.sh --no-configure  # reuse existing config/install.conf
 ```
 
-### 5. Reconfigure without rebuilding
+### 6. Update config directly on writable USB (no rebuild, no re-flash)
+
+Already have a writable USB? Change user, password, hostname in seconds:
+
+```bash
+./build/update-usb.sh               # reconfigure + update USB in place
+./build/update-usb.sh --no-configure # update USB with current config
+```
+
+Just plug in the USB, run the script, and it copies the new config. No rebuild, no re-flash.
+
+### 7. Update config on a read-only ISO (requires re-flash)
+
+If you used `dd` mode (no `--writable`), you can still patch the ISO quickly:
+
+```bash
+./build/update-config.sh              # reconfigure + patch ISO + flash USB
+./build/update-config.sh --no-flash   # reconfigure + patch ISO only
+```
+
+### 8. Reconfigure only (no patch)
 
 ```bash
 ./build/configure.sh                # change values, saves to config/install.conf
 ```
 
-### 6. Flash later
+### 9. Flash later
 
 ```bash
-./build/flash-usb.sh output/localbooth-ubuntu-24.04.1.iso
+./build/flash-usb.sh output/localbooth-ubuntu-24.04.1.iso             # read-only (dd)
+./build/flash-usb.sh --writable output/localbooth-ubuntu-24.04.1.iso  # writable (FAT32)
 ```
 
-### 7. Boot & install
+### 10. Boot & install
 
-Plug the USB into the target machine, boot from USB, and wait.  
+Plug the USB into the target machine, boot from USB (UEFI), and wait.  
 The system installs itself with zero interaction using your configured credentials.
 
 ---

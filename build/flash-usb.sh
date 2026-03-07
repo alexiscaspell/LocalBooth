@@ -2,21 +2,44 @@
 # ──────────────────────────────────────────────────────────────────────
 # LocalBooth — flash ISO to USB drive (macOS & Linux)
 #
+# Modes:
+#   Default (dd):   Raw-copy the ISO to USB.  Fast, BIOS+UEFI, but the
+#                   USB is read-only (ISO 9660).
+#   --writable:     Format USB as FAT32 and copy files.  Writable, so
+#                   you can update config later without re-flashing.
+#                   Requires UEFI boot (most modern hardware).
+#
 # Safety features:
 #   - Auto-detects removable/external disks
 #   - Shows a numbered menu to pick the target
 #   - Refuses to write to the boot disk
 #   - Unmounts the target before writing
-#   - Uses rdisk (raw) on macOS for ~10x faster writes
+#   - Uses rdisk (raw) on macOS for ~10x faster writes (dd mode)
 # ──────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-ISO_FILE="${1:-}"
+WRITABLE="false"
+ISO_FILE=""
+
+for arg in "$@"; do
+    case "${arg}" in
+        --writable) WRITABLE="true" ;;
+        -h|--help)
+            echo "Usage: $0 [--writable] <path-to-iso>"
+            echo ""
+            echo "  --writable  Create a writable FAT32 USB (UEFI only)."
+            echo "              Allows updating config without re-flashing."
+            echo "              Without this flag, uses dd (read-only, BIOS+UEFI)."
+            exit 0
+            ;;
+        *) ISO_FILE="${arg}" ;;
+    esac
+done
 
 log() { echo "[localbooth] $(date '+%F %T') — $*"; }
 
 if [[ -z "${ISO_FILE}" ]]; then
-    echo "Usage: $0 <path-to-iso>" >&2
+    echo "Usage: $0 [--writable] <path-to-iso>" >&2
     exit 1
 fi
 
@@ -177,21 +200,70 @@ else
     umount "${DEVICE}"* 2>/dev/null || true
 fi
 
-# ── Write ISO ────────────────────────────────────────────────────────
-if [[ "${OS}" == "Darwin" ]]; then
-    RAW_DEVICE="/dev/r${DISK_INPUT}"
-    log "Writing ISO to ${RAW_DEVICE} (raw device for speed)"
-    sudo dd if="${ISO_FILE}" of="${RAW_DEVICE}" bs=4m status=progress
+# ── Write to USB ─────────────────────────────────────────────────────
+if [[ "${WRITABLE}" == "true" ]]; then
+    # ── Writable mode: FAT32 + file copy (UEFI only) ─────────────────
+    log "Creating writable FAT32 USB (UEFI boot)"
+
+    if [[ "${OS}" == "Darwin" ]]; then
+        log "Formatting ${DEVICE} as FAT32 (MBR)"
+        diskutil eraseDisk MS-DOS LOCALBOOTH MBR "${DEVICE}"
+        USB_MOUNT="/Volumes/LOCALBOOTH"
+
+        log "Mounting ISO"
+        ISO_MOUNT_INFO=$(hdiutil attach -nobrowse "${ISO_FILE}" 2>/dev/null)
+        ISO_MOUNT=$(echo "${ISO_MOUNT_INFO}" | awk '{$1=$2=""; print $0}' | xargs | tail -1)
+        if [[ -z "${ISO_MOUNT}" || ! -d "${ISO_MOUNT}" ]]; then
+            ISO_MOUNT=$(echo "${ISO_MOUNT_INFO}" | grep -o '/Volumes/[^ ]*' | head -1)
+        fi
+
+        log "Copying files to USB (this may take a few minutes)..."
+        rsync -a --info=progress2 "${ISO_MOUNT}/" "${USB_MOUNT}/"
+
+        log "Unmounting ISO"
+        hdiutil detach "${ISO_MOUNT}" 2>/dev/null || true
+
+        log "Ejecting USB"
+        diskutil eject "${DEVICE}" 2>/dev/null || true
+
+    else
+        log "Partitioning ${DEVICE} as MBR + FAT32"
+        echo ',,0C,*' | sudo sfdisk --force "${DEVICE}"
+        sudo mkfs.vfat -F 32 -n LOCALBOOTH "${DEVICE}1"
+
+        USB_MOUNT=$(mktemp -d)
+        ISO_MOUNT=$(mktemp -d)
+
+        sudo mount "${DEVICE}1" "${USB_MOUNT}"
+        sudo mount -o loop "${ISO_FILE}" "${ISO_MOUNT}"
+
+        log "Copying files to USB (this may take a few minutes)..."
+        sudo cp -a "${ISO_MOUNT}/." "${USB_MOUNT}/"
+        sudo sync
+
+        log "Unmounting"
+        sudo umount "${ISO_MOUNT}"
+        sudo umount "${USB_MOUNT}"
+        rmdir "${ISO_MOUNT}" "${USB_MOUNT}" 2>/dev/null || true
+    fi
+
 else
-    log "Writing ISO to ${DEVICE}"
-    sudo dd if="${ISO_FILE}" of="${DEVICE}" bs=4M status=progress oflag=sync
+    # ── Standard mode: raw dd (BIOS + UEFI) ──────────────────────────
+    if [[ "${OS}" == "Darwin" ]]; then
+        RAW_DEVICE="/dev/r${DISK_INPUT}"
+        log "Writing ISO to ${RAW_DEVICE} (raw device for speed)"
+        sudo dd if="${ISO_FILE}" of="${RAW_DEVICE}" bs=4m status=progress
+    else
+        log "Writing ISO to ${DEVICE}"
+        sudo dd if="${ISO_FILE}" of="${DEVICE}" bs=4M status=progress oflag=sync
+    fi
 fi
 
 # ── Sync & eject ─────────────────────────────────────────────────────
 log "Syncing"
 sync
 
-if [[ "${OS}" == "Darwin" ]]; then
+if [[ "${WRITABLE}" == "false" && "${OS}" == "Darwin" ]]; then
     log "Ejecting ${DEVICE}"
     diskutil eject "${DEVICE}" 2>/dev/null || true
 fi
@@ -213,8 +285,14 @@ echo ""
 echo "  ═══════════════════════════════════════════════════════"
 echo "  USB ready."
 echo ""
-echo "  Plug it into any machine, boot from USB, and the"
-echo "  install will run automatically."
+echo "  Plug it into any machine, boot from USB (UEFI), and"
+echo "  the install will run automatically."
 echo ""
 echo "  Credentials: ${DISPLAY_USER} / $(echo "${DISPLAY_PASS}" | sed 's/./*/g')"
+if [[ "${WRITABLE}" == "true" ]]; then
+    echo ""
+    echo "  Mode: WRITABLE (FAT32)"
+    echo "  To change config later without re-flashing:"
+    echo "    ./build/update-usb.sh"
+fi
 echo "  ═══════════════════════════════════════════════════════"

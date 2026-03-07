@@ -17,6 +17,7 @@ OUTPUT_DIR="${ROOT_DIR}/output"
 IMAGE_NAME="localbooth-builder"
 ISO_CACHE_DIR="${ROOT_DIR}/.iso-cache"
 FLASH="true"
+WRITABLE="false"
 SKIP_CONFIG="false"
 CONF_FILE="${ROOT_DIR}/config/install.conf"
 
@@ -29,6 +30,10 @@ while [[ $# -gt 0 ]]; do
             FLASH="false"
             shift
             ;;
+        --writable)
+            WRITABLE="true"
+            shift
+            ;;
         --defaults)
             SKIP_CONFIG="defaults"
             shift
@@ -38,9 +43,11 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -h|--help)
-            echo "Usage: $0 [--no-flash] [--defaults] [--no-configure]"
+            echo "Usage: $0 [--no-flash] [--writable] [--defaults] [--no-configure]"
             echo ""
             echo "  --no-flash      Build the ISO but don't flash to USB"
+            echo "  --writable      Create a writable FAT32 USB (UEFI only)."
+            echo "                  Allows updating config later with update-usb.sh"
             echo "  --defaults      Use default values without prompting"
             echo "  --no-configure  Skip configuration (use existing install.conf)"
             echo ""
@@ -124,7 +131,9 @@ if [[ "${FLASH}" == "true" ]]; then
     echo ""
     log "Proceeding to flash USB..."
     echo ""
-    bash "${SCRIPT_DIR}/flash-usb.sh" "${ISO_FILE}"
+    FLASH_ARGS=("${ISO_FILE}")
+    [[ "${WRITABLE}" == "true" ]] && FLASH_ARGS+=("--writable")
+    bash "${SCRIPT_DIR}/flash-usb.sh" "${FLASH_ARGS[@]}"
 else
     echo ""
     echo "  To flash later:"
