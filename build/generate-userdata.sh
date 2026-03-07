@@ -76,13 +76,22 @@ autoinstall:
 
 USERDATA
 
-# In offline mode, disable network to prevent APT from reaching the internet.
-# In online mode, omit the network section so the installer uses DHCP.
 if [[ "${INSTALL_PKG_SOURCE}" == "offline" ]]; then
     cat >> "${OUTPUT}" <<USERDATA
   network:
     version: 2
     ethernets: {}
+
+USERDATA
+else
+    cat >> "${OUTPUT}" <<USERDATA
+  network:
+    version: 2
+    ethernets:
+      any-ethernet:
+        match:
+          name: "e*"
+        dhcp4: true
 
 USERDATA
 fi
