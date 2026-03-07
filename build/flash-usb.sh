@@ -227,8 +227,10 @@ if [[ "${WRITABLE}" == "true" ]]; then
         diskutil eject "${DEVICE}" 2>/dev/null || true
 
     else
+        log "Wiping existing partition table on ${DEVICE}"
+        sudo wipefs -af "${DEVICE}"
         log "Partitioning ${DEVICE} as MBR + FAT32"
-        echo ',,0C,*' | sudo sfdisk --force "${DEVICE}"
+        echo ',,0C,*' | sudo sfdisk --label dos --wipe always "${DEVICE}"
         sudo mkfs.vfat -F 32 -n LOCALBOOTH "${DEVICE}1"
 
         USB_MOUNT=$(mktemp -d)
