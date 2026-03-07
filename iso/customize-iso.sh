@@ -33,7 +33,16 @@ if [[ ! -f "${ISO_FILE}" ]]; then
     exit 1
 fi
 
-if [[ ! -d "${LOCAL_REPO}" ]]; then
+# Detect package source mode from config
+INSTALL_PKG_SOURCE="online"
+INSTALL_CONF="${ROOT_DIR}/config/install.conf"
+if [[ -f "${INSTALL_CONF}" ]]; then
+    # shellcheck source=/dev/null
+    source "${INSTALL_CONF}"
+    INSTALL_PKG_SOURCE="${INSTALL_PKG_SOURCE:-online}"
+fi
+
+if [[ "${INSTALL_PKG_SOURCE}" == "offline" && ! -d "${LOCAL_REPO}" ]]; then
     echo "ERROR: local repo not found at ${LOCAL_REPO}. Run repo/create-local-repo.sh first." >&2
     exit 1
 fi
@@ -70,11 +79,15 @@ cp "${AUTOINSTALL_DIR}/meta-data"  "${AUTOINSTALL_DEST}/meta-data"
 cp "${AUTOINSTALL_DIR}/user-data"  "${EXTRACT_DIR}/user-data"
 cp "${AUTOINSTALL_DIR}/meta-data"  "${EXTRACT_DIR}/meta-data"
 
-# ── Inject local APT repository ──────────────────────────────────────
-log "Injecting local APT repository"
-REPO_DEST="${EXTRACT_DIR}/repo"
-rm -rf "${REPO_DEST}"
-cp -a "${LOCAL_REPO}" "${REPO_DEST}"
+# ── Inject local APT repository (offline mode only) ──────────────────
+if [[ "${INSTALL_PKG_SOURCE}" == "offline" ]]; then
+    log "Injecting local APT repository (offline mode)"
+    REPO_DEST="${EXTRACT_DIR}/repo"
+    rm -rf "${REPO_DEST}"
+    cp -a "${LOCAL_REPO}" "${REPO_DEST}"
+else
+    log "Skipping local APT repository (online mode)"
+fi
 
 # ── Inject bootstrap script ──────────────────────────────────────────
 log "Injecting bootstrap script"
@@ -83,8 +96,6 @@ mkdir -p "${BOOTSTRAP_DEST}"
 cp "${BOOTSTRAP_DIR}/bootstrap.sh" "${BOOTSTRAP_DEST}/bootstrap.sh"
 chmod +x "${BOOTSTRAP_DEST}/bootstrap.sh"
 
-# Inject bootstrap.conf so the bootstrap script knows the configured username
-INSTALL_CONF="${ROOT_DIR}/config/install.conf"
 if [[ -f "${INSTALL_CONF}" ]]; then
     cp "${INSTALL_CONF}" "${BOOTSTRAP_DEST}/bootstrap.conf"
     log "Injected bootstrap.conf with install configuration"

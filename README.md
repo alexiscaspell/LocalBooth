@@ -12,8 +12,8 @@ Insert the USB into any machine, boot from it, and walk away.
 | Step | Description |
 |------|-------------|
 | 1 | Boots the Ubuntu Server installer from USB |
-| 2 | Autoinstall partitions the disk, creates a `dev` user, installs packages |
-| 3 | All packages come from a **local APT repository on the USB** — no network needed |
+| 2 | Autoinstall partitions the disk, creates a user, installs packages |
+| 3 | Packages installed from **internet** (online mode) or **local USB repo** (offline mode) |
 | 4 | A **bootstrap script** configures Docker, SSH, Git, shell aliases, and more |
 | 5 | Machine reboots into a ready-to-use system |
 
@@ -55,10 +55,22 @@ LocalBooth/
 ## Prerequisites
 
 - **Docker Desktop** — the only requirement on macOS / Windows / Linux.
-- An internet connection (to download the Ubuntu ISO and packages during build).
-- A USB drive (8 GB minimum).
+- An internet connection (to download the Ubuntu ISO during build; also needed during install if using online mode).
+- A USB drive (4 GB minimum for online mode, 8 GB for offline).
 
 No need for a Linux machine — everything runs inside a Docker container.
+
+## Online vs Offline Mode
+
+| | **Online** | **Offline** |
+|---|---|---|
+| **Packages** | Downloaded during install from Ubuntu repos | Bundled on the USB drive |
+| **Network** | Target machine needs internet | No network needed |
+| **USB size** | ~2 GB (smaller) | ~4 GB (includes all `.deb` packages) |
+| **Build time** | Faster (skips package download + repo build) | Slower (downloads ~180 packages + deps) |
+| **Use case** | Lab/office with reliable internet | Air-gapped or unreliable network |
+
+You choose the mode during configuration (`./build/configure.sh`).
 
 ---
 
@@ -91,6 +103,7 @@ The script will ask you to configure the install:
   Timezone        [UTC]:
   Disk layout     [lvm]:
   Enable SSH      [yes]:
+  Package source  [online]:
 ```
 
 Press Enter to accept each default, or type a new value.
@@ -99,7 +112,7 @@ After configuration, the script will:
 
 1. Build a Docker image with all required Ubuntu tools
 2. Generate the autoinstall config with your values (password hash created securely)
-3. Run the full build pipeline (download ISO, packages, build offline repo, customize ISO)
+3. Run the build pipeline (download ISO, customize ISO; in offline mode also downloads packages and builds the local repo)
 4. Show connected disks and ask which one is the USB
 5. Flash the ISO to the USB (with safety checks)
 
@@ -224,7 +237,7 @@ sudo ./build/make-usb-native.sh --iso iso/ubuntu-server.iso
 ./build/configure.sh
 ```
 
-This will prompt for all values (username, password, hostname, locale, keyboard, timezone, disk layout, SSH) and save them to `config/install.conf`. The password hash is generated securely inside the Docker container during build — you never need to run `openssl passwd` manually.
+This will prompt for all values (username, password, hostname, locale, keyboard, timezone, disk layout, SSH, package source) and save them to `config/install.conf`. The password hash is generated securely inside the Docker container during build — you never need to run `openssl passwd` manually.
 
 ### Add kubectl or other binaries
 
@@ -244,7 +257,15 @@ Edit `bootstrap/bootstrap.sh` to add or remove provisioning steps.
 
 ---
 
-## Offline Architecture
+## Architecture
+
+### Online Mode
+
+The USB only contains the installer and configuration. Packages are downloaded from Ubuntu's repositories during install — the target machine must have internet access.
+
+### Offline Mode
+
+All `.deb` packages and their dependencies are bundled on the USB:
 
 ```
 USB Drive (ISO)
@@ -260,13 +281,7 @@ USB Drive (ISO)
 └── (standard Ubuntu installer files)
 ```
 
-The autoinstall `user-data` configures APT to use:
-
-```
-deb [trusted=yes] file:///cdrom/repo ./
-```
-
-This tells the installer to pull all packages from the USB drive instead of the internet.
+During install, `late-commands` bind-mounts the local repo into the target and runs `apt-get install` against it. After installation, APT sources are restored to default for future online updates.
 
 ---
 
@@ -304,9 +319,13 @@ The bootstrap script (`bootstrap/bootstrap.sh`) runs at the end of installation 
 
 The autoinstall config disables network during installation. If you see a timeout, ensure the GRUB line includes `autoinstall ds=nocloud;s=/cdrom/autoinstall/`.
 
-### Packages fail to install
+### Packages fail to install (offline mode)
 
 Ensure you built the offline repo on the **same Ubuntu release** as the target. Package dependencies are release-specific.
+
+### Packages fail to install (online mode)
+
+The target machine needs a working internet connection (DHCP + DNS). Check the network cable and that DHCP is available on the network.
 
 ### GRUB not patched correctly
 

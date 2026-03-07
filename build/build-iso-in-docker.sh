@@ -21,6 +21,15 @@ EXTRACT_DIR="${WORK_DIR}/extracted"
 
 log() { echo "[localbooth] $(date '+%F %T') — $*"; }
 
+# ── Detect package source mode from config ────────────────────────────
+CONF_FILE="${ROOT_DIR}/config/install.conf"
+INSTALL_PKG_SOURCE="online"
+if [[ -f "${CONF_FILE}" ]]; then
+    # shellcheck source=/dev/null
+    source "${CONF_FILE}"
+    INSTALL_PKG_SOURCE="${INSTALL_PKG_SOURCE:-online}"
+fi
+
 mkdir -p "${OUTPUT_DIR}" "${ISO_CACHE}" "${WORK_DIR}"
 
 # ── STEP 1 — Download stock ISO ──────────────────────────────────────
@@ -35,13 +44,16 @@ fi
 log "=== Generating autoinstall user-data ==="
 bash "${ROOT_DIR}/build/generate-userdata.sh" "${ROOT_DIR}"
 
-# ── STEP 2 — Download .deb packages ──────────────────────────────────
-log "=== Downloading packages ==="
-bash "${ROOT_DIR}/packages/download-packages.sh"
+# ── STEP 2 & 3 — Download packages & build repo (offline mode only) ──
+if [[ "${INSTALL_PKG_SOURCE}" == "offline" ]]; then
+    log "=== Downloading packages (offline mode) ==="
+    bash "${ROOT_DIR}/packages/download-packages.sh"
 
-# ── STEP 3 — Build local APT repository ──────────────────────────────
-log "=== Building local APT repository ==="
-bash "${ROOT_DIR}/repo/create-local-repo.sh"
+    log "=== Building local APT repository ==="
+    bash "${ROOT_DIR}/repo/create-local-repo.sh"
+else
+    log "=== Skipping package download (online mode — packages will be fetched during install) ==="
+fi
 
 # ── STEP 4 — Extract & customize ISO ─────────────────────────────────
 log "=== Customizing ISO ==="

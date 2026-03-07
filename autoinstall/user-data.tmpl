@@ -7,7 +7,10 @@ autoinstall:
   keyboard:
     layout: us
 
-  # ── Network — disabled during install (fully offline) ────────────────
+  # ── Network ──────────────────────────────────────────────────────────
+  # In online mode the installer uses DHCP by default.
+  # In offline mode network is disabled to prevent APT from reaching
+  # the internet.
   network:
     version: 2
     ethernets: {}
@@ -23,45 +26,57 @@ autoinstall:
     username: dev
     # Password: "changeme"
     # Generate a new hash on Ubuntu: openssl passwd -6 "your-password"
-    # The hash below corresponds to "changeme" — REPLACE before production use.
-    password: "$6$xyz$D8kBzfBSEJnTopaz5iBGQBbJ7F5t60fJpIKxKlwMPwYfGczjh9M.Uw0xkOdfPE7LkNRqAsNPTYQiX38.KTRWI0"
+    password: "$6$xyz$PLACEHOLDER_HASH"
 
   # ── SSH ──────────────────────────────────────────────────────────────
   ssh:
     install-server: true
     allow-pw: true
 
-  # ── APT — offline local repository on the install media ──────────────
-  apt:
-    preserve_sources_list: false
-    sources_list: |
-      deb [trusted=yes] file:///cdrom/repo ./
-    geoip: false
+  # ════════════════════════════════════════════════════════════════════
+  # ONLINE MODE — packages downloaded from the internet during install.
+  # The machine MUST have network access.
+  # ════════════════════════════════════════════════════════════════════
+  #
+  # packages:
+  #   - docker.io
+  #   - git
+  #   - curl
+  #   - build-essential
+  #   - jq
+  #   - unzip
+  #   - htop
+  #   - ca-certificates
+  #   - gnupg
+  #   - openssh-server
+  #
+  # late-commands:
+  #   - cp /cdrom/bootstrap/bootstrap.sh /target/tmp/bootstrap.sh
+  #   - chmod +x /target/tmp/bootstrap.sh
+  #   - curtin in-target --target=/target -- /tmp/bootstrap.sh
 
-  # ── Packages to install ──────────────────────────────────────────────
-  packages:
-    - docker.io
-    - git
-    - curl
-    - build-essential
-    - jq
-    - unzip
-    - htop
-    - ca-certificates
-    - gnupg
-    - openssh-server
-
-  # ── Updates — skip (offline) ─────────────────────────────────────────
-  updates: security
-  package_update: false
-  package_upgrade: false
-
-  # ── Late commands — run after install, inside the target ─────────────
-  late-commands:
-    # Copy the bootstrap script into the installed system
-    - cp /cdrom/bootstrap/bootstrap.sh /target/tmp/bootstrap.sh
-    - chmod +x /target/tmp/bootstrap.sh
-    - curtin in-target --target=/target -- /tmp/bootstrap.sh
+  # ════════════════════════════════════════════════════════════════════
+  # OFFLINE MODE — packages installed from the local repo on the USB.
+  # No network needed.
+  # ════════════════════════════════════════════════════════════════════
+  #
+  # updates: security
+  # package_update: false
+  # package_upgrade: false
+  #
+  # late-commands:
+  #   - mv /target/etc/apt/sources.list.d/ubuntu.sources /target/etc/apt/sources.list.d/ubuntu.sources.bak || true
+  #   - echo 'deb [trusted=yes] file:///mnt/repo ./' > /target/etc/apt/sources.list
+  #   - mkdir -p /target/mnt/repo
+  #   - mount --bind /cdrom/repo /target/mnt/repo
+  #   - curtin in-target --target=/target -- apt-get update
+  #   - curtin in-target --target=/target -- apt-get install -y --no-install-recommends docker.io git curl ...
+  #   - umount /target/mnt/repo
+  #   - rm -f /target/etc/apt/sources.list
+  #   - mv /target/etc/apt/sources.list.d/ubuntu.sources.bak /target/etc/apt/sources.list.d/ubuntu.sources || true
+  #   - cp /cdrom/bootstrap/bootstrap.sh /target/tmp/bootstrap.sh
+  #   - chmod +x /target/tmp/bootstrap.sh
+  #   - curtin in-target --target=/target -- /tmp/bootstrap.sh
 
   # ── Reboot automatically when done ──────────────────────────────────
   shutdown: reboot

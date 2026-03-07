@@ -25,6 +25,7 @@ DEF_KEYBOARD="us"
 DEF_TIMEZONE="UTC"
 DEF_DISK_LAYOUT="lvm"
 DEF_SSH="yes"
+DEF_PKG_SOURCE="online"
 
 # ── Load existing config if present ──────────────────────────────────
 if [[ -f "${CONF_FILE}" ]]; then
@@ -38,6 +39,7 @@ if [[ -f "${CONF_FILE}" ]]; then
     DEF_TIMEZONE="${INSTALL_TIMEZONE:-${DEF_TIMEZONE}}"
     DEF_DISK_LAYOUT="${INSTALL_DISK_LAYOUT:-${DEF_DISK_LAYOUT}}"
     DEF_SSH="${INSTALL_SSH:-${DEF_SSH}}"
+    DEF_PKG_SOURCE="${INSTALL_PKG_SOURCE:-${DEF_PKG_SOURCE}}"
 fi
 
 # ── Check for --defaults flag ────────────────────────────────────────
@@ -205,6 +207,11 @@ SSH_OPTIONS=(
     "no"
 )
 
+PKG_SOURCE_OPTIONS=(
+    "online"
+    "offline"
+)
+
 # ── Interactive prompts ──────────────────────────────────────────────
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
@@ -224,6 +231,8 @@ ask_menu "Keyboard layout" "${DEF_KEYBOARD}"    "INSTALL_KEYBOARD"    "${KEYBOAR
 ask_menu "Timezone"        "${DEF_TIMEZONE}"    "INSTALL_TIMEZONE"    "${TIMEZONES[@]}"
 ask_menu "Disk layout"     "${DEF_DISK_LAYOUT}" "INSTALL_DISK_LAYOUT" "${DISK_LAYOUTS[@]}"
 ask_menu "Enable SSH"      "${DEF_SSH}"         "INSTALL_SSH"         "${SSH_OPTIONS[@]}"
+ask_menu "Package source (online = needs internet during install, offline = bundled in USB)" \
+                          "${DEF_PKG_SOURCE}"  "INSTALL_PKG_SOURCE"  "${PKG_SOURCE_OPTIONS[@]}"
 
 # ── Write config file ────────────────────────────────────────────────
 cat > "${CONF_FILE}" <<EOF
@@ -239,6 +248,7 @@ INSTALL_KEYBOARD="${INSTALL_KEYBOARD}"
 INSTALL_TIMEZONE="${INSTALL_TIMEZONE}"
 INSTALL_DISK_LAYOUT="${INSTALL_DISK_LAYOUT}"
 INSTALL_SSH="${INSTALL_SSH}"
+INSTALL_PKG_SOURCE="${INSTALL_PKG_SOURCE}"
 EOF
 
 echo "  ┌──────────────────────────────────────────────────┐"
@@ -250,6 +260,7 @@ printf "  │  Keyboard:    %-34s │\n" "${INSTALL_KEYBOARD}"
 printf "  │  Timezone:    %-34s │\n" "${INSTALL_TIMEZONE}"
 printf "  │  Disk layout: %-34s │\n" "${INSTALL_DISK_LAYOUT}"
 printf "  │  SSH:         %-34s │\n" "${INSTALL_SSH}"
+printf "  │  Packages:   %-34s │\n" "${INSTALL_PKG_SOURCE}"
 echo "  └──────────────────────────────────────────────────┘"
 echo ""
 echo "  ✓ Configuration saved to config/install.conf"
