@@ -245,11 +245,13 @@ if [[ "${WRITABLE}" == "true" ]]; then
 
         log "Copying files to USB (this may take a few minutes)..."
         sudo rsync -a --no-links --info=progress2 "${ISO_MOUNT}/" "${USB_MOUNT}/"
-        sudo sync
+
+        log "Flushing writes to USB (may take a moment)..."
+        timeout 120 sudo sync || log "WARN: sync timed out after 120s — data likely flushed anyway"
 
         log "Unmounting"
-        sudo umount "${ISO_MOUNT}"
-        sudo umount "${USB_MOUNT}"
+        sudo umount "${ISO_MOUNT}" 2>/dev/null || true
+        sudo umount -l "${USB_MOUNT}" 2>/dev/null || true
         rmdir "${ISO_MOUNT}" "${USB_MOUNT}" 2>/dev/null || true
     fi
 
