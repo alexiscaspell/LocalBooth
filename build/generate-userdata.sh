@@ -115,9 +115,28 @@ USERDATA
 if [[ "${INSTALL_PKG_SOURCE}" == "online" ]]; then
     log "Mode: ONLINE — packages will be downloaded during install"
     cat >> "${OUTPUT}" <<USERDATA
-  packages:
-$(echo -e "${PACKAGES_YAML}")
   late-commands:
+    # Wait for network — USB-C/USB ethernet adapters may take time to initialize
+    - |
+      echo '[localbooth] Waiting for network...'
+      for i in \$(seq 1 60); do
+        if ip route | grep -q default; then
+          echo "[localbooth] Network ready (attempt \$i)"
+          break
+        fi
+        # Try to bring up any ethernet interface via DHCP
+        for iface in \$(ls /sys/class/net/ | grep -E '^(en|eth)'); do
+          ip link set "\$iface" up 2>/dev/null || true
+          dhclient "\$iface" 2>/dev/null || true
+        done
+        sleep 2
+      done
+      if ! ip route | grep -q default; then
+        echo '[localbooth] WARNING: No network after 120s — package install may fail'
+      fi
+    - curtin in-target --target=/target -- apt-get update
+    - curtin in-target --target=/target -- apt-get install -y ${PACKAGES_SPACE}
+    # Run the bootstrap provisioning script
     - cp /cdrom/bootstrap/bootstrap.sh /target/tmp/bootstrap.sh
     - chmod +x /target/tmp/bootstrap.sh
     - curtin in-target --target=/target -- /tmp/bootstrap.sh
