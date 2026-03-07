@@ -237,10 +237,10 @@ if [[ "${WRITABLE}" == "true" ]]; then
         ISO_MOUNT=$(mktemp -d)
 
         sudo mount "${DEVICE}1" "${USB_MOUNT}"
-        sudo mount -o loop "${ISO_FILE}" "${ISO_MOUNT}"
+        sudo mount -o loop,ro "${ISO_FILE}" "${ISO_MOUNT}"
 
         log "Copying files to USB (this may take a few minutes)..."
-        sudo cp -a "${ISO_MOUNT}/." "${USB_MOUNT}/"
+        sudo rsync -a --no-links --info=progress2 "${ISO_MOUNT}/" "${USB_MOUNT}/"
         sudo sync
 
         log "Unmounting"
