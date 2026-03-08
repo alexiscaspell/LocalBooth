@@ -135,8 +135,13 @@ if [[ -f "${GRUB_CFG}" ]]; then
     # Insert 'autoinstall' parameter and point to our cloud-init data
     # The ds=nocloud flag tells cloud-init where to find user-data/meta-data.
     sed -i 's|---$|autoinstall ds=nocloud\\;s=/cdrom/autoinstall/ ---|g' "${GRUB_CFG}"
-    # Set timeout to 1 second so it boots immediately
-    sed -i 's/^set timeout=.*/set timeout=1/' "${GRUB_CFG}"
+    if [[ "${INSTALL_INTERACTIVE}" == "yes" ]]; then
+        # Skip GRUB menu entirely — TUI is the first screen the user sees
+        sed -i 's/^set timeout=.*/set timeout=0/' "${GRUB_CFG}"
+        log "GRUB timeout set to 0 (interactive TUI mode)"
+    else
+        sed -i 's/^set timeout=.*/set timeout=1/' "${GRUB_CFG}"
+    fi
     log "GRUB patched"
 else
     log "WARN: grub.cfg not found at expected path — you may need to patch it manually"

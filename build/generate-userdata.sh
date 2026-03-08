@@ -153,22 +153,18 @@ if [[ "${INSTALL_INTERACTIVE}" == "yes" ]]; then
     log "Interactive mode enabled — adding TUI to early-commands"
     cat >> "${OUTPUT}" <<'USERDATA'
     - |
-      echo '[localbooth] Interactive TUI: starting...' >> /var/log/localbooth-tui.log
-      # Try openvt first (opens a new VT and switches to it),
-      # fall back to chvt + tty, then /dev/console.
+      # Remount /cdrom read-write so the TUI can update user-data on the USB
+      mount -o remount,rw /cdrom 2>/dev/null || true
+      # Launch TUI on a visible virtual terminal
       if command -v openvt >/dev/null 2>&1; then
-        echo '[localbooth] Using openvt' >> /var/log/localbooth-tui.log
         openvt -s -w -- bash /cdrom/scripts/interactive-config.sh
       elif command -v chvt >/dev/null 2>&1; then
-        echo '[localbooth] Using chvt' >> /var/log/localbooth-tui.log
         chvt 2
         bash /cdrom/scripts/interactive-config.sh </dev/tty2 >/dev/tty2 2>&1
         chvt 1
       else
-        echo '[localbooth] Fallback: /dev/tty1' >> /var/log/localbooth-tui.log
         bash /cdrom/scripts/interactive-config.sh </dev/tty1 >/dev/tty1 2>&1
       fi
-      echo '[localbooth] Interactive TUI: done' >> /var/log/localbooth-tui.log
 USERDATA
 fi
 

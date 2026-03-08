@@ -60,7 +60,7 @@ fi
 
 # ── Countdown prompt — skip TUI if no key pressed ────────────────────
 show_countdown() {
-    local secs=10
+    local secs=30
     while (( secs > 0 )); do
         printf "\r[localbooth] Press any key in %2d seconds to configure install (or wait to auto-install)..." "${secs}" > "${TTY}"
         if read -rsn1 -t1 <"${TTY}" 2>/dev/null; then
@@ -293,10 +293,13 @@ USERDATA
 # ── Write files to USB ───────────────────────────────────────────────
 echo "[localbooth] Writing new configuration to USB..." > "${TTY}"
 
+# Ensure USB is mounted read-write (Ubuntu mounts /cdrom read-only by default)
+mount -o remount,rw "${USB_ROOT}" 2>/dev/null || true
+
 if ! touch "${USERDATA}" 2>/dev/null; then
-    echo "[localbooth] ERROR: USB is not writable. Interactive config requires --writable USB." > "${TTY}"
-    echo "[localbooth] Continuing with saved configuration." > "${TTY}"
-    sleep 3
+    whiptail --title "${TITLE}" --msgbox \
+        "ERROR: USB is not writable.\n\nThe USB was not created with --writable.\nContinuing with saved configuration." \
+        10 60 <"${TTY}" >"${TTY}"
     exit 0
 fi
 
