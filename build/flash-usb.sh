@@ -246,13 +246,17 @@ if [[ "${WRITABLE}" == "true" ]]; then
         log "Copying files to USB (this may take a few minutes)..."
         sudo rsync -a --no-links --info=progress2 "${ISO_MOUNT}/" "${USB_MOUNT}/"
 
-        log "Flushing writes to USB (may take a moment)..."
-        timeout 120 sudo sync || log "WARN: sync timed out after 120s — data likely flushed anyway"
-
-        log "Unmounting"
+        log "Unmounting ISO"
         sudo umount "${ISO_MOUNT}" 2>/dev/null || true
-        sudo umount -l "${USB_MOUNT}" 2>/dev/null || true
-        rmdir "${ISO_MOUNT}" "${USB_MOUNT}" 2>/dev/null || true
+        rmdir "${ISO_MOUNT}" 2>/dev/null || true
+
+        log "Flushing writes and unmounting USB (may take a minute)..."
+        # umount implicitly flushes; use a timeout to avoid hanging forever
+        if ! timeout 180 sudo umount "${USB_MOUNT}" 2>/dev/null; then
+            log "WARN: normal unmount timed out — using lazy unmount"
+            sudo umount -l "${USB_MOUNT}" 2>/dev/null || true
+        fi
+        rmdir "${USB_MOUNT}" 2>/dev/null || true
     fi
 
 else
@@ -269,7 +273,7 @@ fi
 
 # ── Sync & eject ─────────────────────────────────────────────────────
 log "Syncing"
-sync
+timeout 60 sync 2>/dev/null || log "WARN: final sync timed out — data was already flushed"
 
 if [[ "${WRITABLE}" == "false" && "${OS}" == "Darwin" ]]; then
     log "Ejecting ${DEVICE}"
