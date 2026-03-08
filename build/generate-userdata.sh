@@ -183,6 +183,7 @@ if [[ "${INSTALL_PKG_SOURCE}" == "online" ]]; then
       fi
     - curtin in-target --target=/target -- apt-get update
     - curtin in-target --target=/target -- apt-get install -y ${PACKAGES_SPACE}
+    - curtin in-target --target=/target -- usermod -aG docker ${INSTALL_USERNAME} || true
     # Run the bootstrap provisioning script
     - cp /cdrom/bootstrap/bootstrap.sh /target/tmp/bootstrap.sh
     - cp /cdrom/bootstrap/bootstrap.conf /target/tmp/bootstrap.conf || true
@@ -211,6 +212,7 @@ else
     # Restore the original APT sources for future online updates
     - rm -f /target/etc/apt/sources.list
     - mv /target/etc/apt/sources.list.d/ubuntu.sources.bak /target/etc/apt/sources.list.d/ubuntu.sources || true
+    - curtin in-target --target=/target -- usermod -aG docker ${INSTALL_USERNAME} || true
     # Run the bootstrap provisioning script
     - cp /cdrom/bootstrap/bootstrap.sh /target/tmp/bootstrap.sh
     - cp /cdrom/bootstrap/bootstrap.conf /target/tmp/bootstrap.conf || true
