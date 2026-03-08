@@ -101,6 +101,25 @@ if [[ -f "${INSTALL_CONF}" ]]; then
     log "Injected bootstrap.conf with install configuration"
 fi
 
+# ── Inject scripts directory (interactive TUI, etc.) ──────────────────
+SCRIPTS_SRC="${ROOT_DIR}/scripts"
+if [[ -d "${SCRIPTS_SRC}" ]]; then
+    log "Injecting scripts directory"
+    SCRIPTS_DEST="${EXTRACT_DIR}/scripts"
+    rm -rf "${SCRIPTS_DEST}"
+    cp -a "${SCRIPTS_SRC}" "${SCRIPTS_DEST}"
+    chmod +x "${SCRIPTS_DEST}"/*.sh 2>/dev/null || true
+fi
+
+# ── Inject config directory (package-list.txt for interactive TUI) ────
+CONFIG_SRC="${ROOT_DIR}/config"
+if [[ -d "${CONFIG_SRC}" ]]; then
+    log "Injecting config directory"
+    CONFIG_DEST="${EXTRACT_DIR}/config"
+    mkdir -p "${CONFIG_DEST}"
+    cp "${CONFIG_SRC}/package-list.txt" "${CONFIG_DEST}/package-list.txt" 2>/dev/null || true
+fi
+
 # ── Inject extras directory (for optional kubectl, etc.) ──────────────
 EXTRAS_SRC="${ROOT_DIR}/extras"
 if [[ -d "${EXTRAS_SRC}" ]]; then

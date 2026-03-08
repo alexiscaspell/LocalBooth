@@ -18,6 +18,7 @@ IMAGE_NAME="localbooth-builder"
 ISO_CACHE_DIR="${ROOT_DIR}/.iso-cache"
 FLASH="true"
 WRITABLE="false"
+GUI="false"
 SKIP_CONFIG="false"
 CONF_FILE="${ROOT_DIR}/config/install.conf"
 
@@ -34,6 +35,10 @@ while [[ $# -gt 0 ]]; do
             WRITABLE="true"
             shift
             ;;
+        --gui)
+            GUI="true"
+            shift
+            ;;
         --defaults)
             SKIP_CONFIG="defaults"
             shift
@@ -43,11 +48,13 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -h|--help)
-            echo "Usage: $0 [--no-flash] [--writable] [--defaults] [--no-configure]"
+            echo "Usage: $0 [--no-flash] [--writable] [--gui] [--defaults] [--no-configure]"
             echo ""
             echo "  --no-flash      Build the ISO but don't flash to USB"
             echo "  --writable      Create a writable FAT32 USB (UEFI only)."
             echo "                  Allows updating config later with update-usb.sh"
+            echo "  --gui           Add interactive TUI at boot time (requires --writable)."
+            echo "                  Lets user change config before install starts."
             echo "  --defaults      Use default values without prompting"
             echo "  --no-configure  Skip configuration (use existing install.conf)"
             echo ""
@@ -84,6 +91,21 @@ else
         bash "${SCRIPT_DIR}/configure.sh"
     else
         log "Using existing config/install.conf"
+    fi
+fi
+
+# ── Handle --gui flag ─────────────────────────────────────────────────
+if [[ "${GUI}" == "true" ]]; then
+    if [[ "${WRITABLE}" != "true" ]]; then
+        echo "ERROR: --gui requires --writable (the TUI writes config back to the USB)." >&2
+        exit 1
+    fi
+    log "Interactive TUI enabled — will be available at boot"
+    if grep -q '^INSTALL_INTERACTIVE=' "${CONF_FILE}" 2>/dev/null; then
+        sed -i.bak 's/^INSTALL_INTERACTIVE=.*/INSTALL_INTERACTIVE="yes"/' "${CONF_FILE}"
+        rm -f "${CONF_FILE}.bak"
+    else
+        echo 'INSTALL_INTERACTIVE="yes"' >> "${CONF_FILE}"
     fi
 fi
 

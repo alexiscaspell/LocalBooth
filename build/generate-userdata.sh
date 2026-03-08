@@ -25,6 +25,7 @@ INSTALL_TIMEZONE="UTC"
 INSTALL_DISK_LAYOUT="lvm"
 INSTALL_SSH="yes"
 INSTALL_PKG_SOURCE="online"
+INSTALL_INTERACTIVE="no"
 
 # ── Load config ──────────────────────────────────────────────────────
 if [[ -f "${CONF_FILE}" ]]; then
@@ -111,6 +112,16 @@ cat >> "${OUTPUT}" <<USERDATA
     allow-pw: ${SSH_ALLOW_PW}
 
 USERDATA
+
+# ── Early-commands: interactive TUI (writable USB only) ──────────────
+if [[ "${INSTALL_INTERACTIVE}" == "yes" ]]; then
+    log "Interactive mode enabled — adding TUI early-commands"
+    cat >> "${OUTPUT}" <<USERDATA
+  early-commands:
+    - bash /cdrom/scripts/interactive-config.sh </dev/console >/dev/console 2>&1
+
+USERDATA
+fi
 
 if [[ "${INSTALL_PKG_SOURCE}" == "online" ]]; then
     log "Mode: ONLINE — packages will be downloaded during install"

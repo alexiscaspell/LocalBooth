@@ -19,6 +19,7 @@ ROOT_DIR="$(dirname "${SCRIPT_DIR}")"
 CONF_FILE="${ROOT_DIR}/config/install.conf"
 IMAGE_NAME="localbooth-builder"
 SKIP_CONFIG="false"
+GUI=""
 USB_LABEL="LOCALBOOTH"
 
 log() { echo "[localbooth] $(date '+%F %T') — $*"; }
@@ -34,11 +35,21 @@ while [[ $# -gt 0 ]]; do
             SKIP_CONFIG="true"
             shift
             ;;
+        --gui)
+            GUI="yes"
+            shift
+            ;;
+        --no-gui)
+            GUI="no"
+            shift
+            ;;
         -h|--help)
-            echo "Usage: $0 [--no-configure] [--defaults]"
+            echo "Usage: $0 [--no-configure] [--defaults] [--gui] [--no-gui]"
             echo ""
             echo "  --no-configure  Skip prompts (use existing install.conf)"
             echo "  --defaults      Use default values without prompting"
+            echo "  --gui           Enable interactive TUI at boot time"
+            echo "  --no-gui        Disable interactive TUI at boot time"
             echo ""
             echo "Requires: Docker + a writable LOCALBOOTH USB (created with flash-usb.sh --writable)"
             exit 0
@@ -105,6 +116,21 @@ else
     fi
 fi
 
+# ── Handle --gui / --no-gui flag ──────────────────────────────────────
+if [[ -n "${GUI}" ]]; then
+    if grep -q '^INSTALL_INTERACTIVE=' "${CONF_FILE}" 2>/dev/null; then
+        sed -i.bak "s/^INSTALL_INTERACTIVE=.*/INSTALL_INTERACTIVE=\"${GUI}\"/" "${CONF_FILE}"
+        rm -f "${CONF_FILE}.bak"
+    else
+        echo "INSTALL_INTERACTIVE=\"${GUI}\"" >> "${CONF_FILE}"
+    fi
+    if [[ "${GUI}" == "yes" ]]; then
+        log "Interactive TUI enabled"
+    else
+        log "Interactive TUI disabled"
+    fi
+fi
+
 # ── Ensure Docker image exists ────────────────────────────────────────
 if ! docker image inspect "${IMAGE_NAME}" &>/dev/null; then
     log "Docker image not found — building ${IMAGE_NAME}"
@@ -132,6 +158,20 @@ cp "${ROOT_DIR}/autoinstall/meta-data" "${USB_MOUNT}/meta-data"
 if [[ -f "${CONF_FILE}" ]]; then
     mkdir -p "${USB_MOUNT}/bootstrap"
     cp "${CONF_FILE}" "${USB_MOUNT}/bootstrap/bootstrap.conf"
+fi
+
+# Copy scripts directory (interactive TUI, etc.)
+SCRIPTS_SRC="${ROOT_DIR}/scripts"
+if [[ -d "${SCRIPTS_SRC}" ]]; then
+    mkdir -p "${USB_MOUNT}/scripts"
+    cp "${SCRIPTS_SRC}"/*.sh "${USB_MOUNT}/scripts/" 2>/dev/null || true
+    chmod +x "${USB_MOUNT}/scripts/"*.sh 2>/dev/null || true
+fi
+
+# Copy package-list.txt (needed by interactive TUI for user-data generation)
+if [[ -f "${ROOT_DIR}/config/package-list.txt" ]]; then
+    mkdir -p "${USB_MOUNT}/config"
+    cp "${ROOT_DIR}/config/package-list.txt" "${USB_MOUNT}/config/package-list.txt"
 fi
 
 sync
