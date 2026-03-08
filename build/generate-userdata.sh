@@ -113,15 +113,51 @@ cat >> "${OUTPUT}" <<USERDATA
 
 USERDATA
 
-# ── Early-commands: interactive TUI (writable USB only) ──────────────
-if [[ "${INSTALL_INTERACTIVE}" == "yes" ]]; then
-    log "Interactive mode enabled — adding TUI early-commands"
-    cat >> "${OUTPUT}" <<USERDATA
+# ── Early-commands ────────────────────────────────────────────────────
+# Always add early-commands to fix FAT32 symlink issues on writable USBs.
+# On read-only ISO boots these commands fail silently (harmless).
+log "Adding early-commands (FAT32 compat + optional TUI)"
+cat >> "${OUTPUT}" <<'USERDATA'
   early-commands:
-    - bash /cdrom/scripts/interactive-config.sh </dev/console >/dev/console 2>&1
+    - |
+      # Fix missing symlinks on FAT32 writable USB.
+      # The ISO has symlinks (ubuntu -> ., dists/stable -> noble, etc.)
+      # that rsync --no-links skips. Without them the installer's APT
+      # can't find bootloader packages (grub-efi-amd64, shim-signed).
+      # Bind-mounting restores the paths the installer expects.
+      if [ ! -e /cdrom/ubuntu ] && [ -d /cdrom/dists ]; then
+        mkdir -p /cdrom/ubuntu 2>/dev/null || true
+        mount --bind /cdrom /cdrom/ubuntu 2>/dev/null || true
+        echo '[localbooth] Created /cdrom/ubuntu bind mount (FAT32 fix)'
+      fi
+      CODENAME=""
+      for d in /cdrom/dists/*/; do
+        name=$(basename "$d")
+        case "$name" in stable|unstable) continue ;; esac
+        CODENAME="$name"
+        break
+      done
+      if [ -n "$CODENAME" ]; then
+        if [ ! -e /cdrom/dists/stable ]; then
+          mkdir -p /cdrom/dists/stable 2>/dev/null || true
+          mount --bind "/cdrom/dists/$CODENAME" /cdrom/dists/stable 2>/dev/null || true
+        fi
+        if [ ! -e /cdrom/dists/unstable ]; then
+          mkdir -p /cdrom/dists/unstable 2>/dev/null || true
+          mount --bind "/cdrom/dists/$CODENAME" /cdrom/dists/unstable 2>/dev/null || true
+        fi
+      fi
+USERDATA
 
+if [[ "${INSTALL_INTERACTIVE}" == "yes" ]]; then
+    log "Interactive mode enabled — adding TUI to early-commands"
+    cat >> "${OUTPUT}" <<USERDATA
+    - bash /cdrom/scripts/interactive-config.sh </dev/console >/dev/console 2>&1
 USERDATA
 fi
+
+# Blank line after early-commands section
+echo "" >> "${OUTPUT}"
 
 if [[ "${INSTALL_PKG_SOURCE}" == "online" ]]; then
     log "Mode: ONLINE — packages will be downloaded during install"
