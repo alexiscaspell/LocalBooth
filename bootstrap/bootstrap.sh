@@ -3,49 +3,70 @@
 # LocalBooth — post-install bootstrap script
 #
 # Executed via autoinstall late-commands inside the freshly installed
-# target system.  It configures the "dev" user environment, enables
+# target system (chroot).  It configures the user environment, enables
 # services, and sets up developer conveniences.
 # ──────────────────────────────────────────────────────────────────────
-set -euo pipefail
+set -uo pipefail
 
 LOGFILE="/var/log/localbooth-bootstrap.log"
-exec > >(tee -a "$LOGFILE") 2>&1
 
-# Read the configured username, fall back to "dev"
-BOOTSTRAP_CONF="/cdrom/bootstrap/bootstrap.conf"
-DEV_USER="dev"
-if [[ -f "${BOOTSTRAP_CONF}" ]]; then
-    # shellcheck source=/dev/null
-    source "${BOOTSTRAP_CONF}"
-    DEV_USER="${INSTALL_USERNAME:-dev}"
+log() { echo "[localbooth] $(date '+%F %T') — $*" | tee -a "${LOGFILE}"; }
+
+# ── Detect the primary non-root user ──────────────────────────────────
+# Inside a chroot, /cdrom isn't mounted so we can't read bootstrap.conf.
+# Instead, find the first user with UID >= 1000 (the user created by
+# autoinstall identity section).
+DEV_USER=""
+
+# Try bootstrap.conf first (works when script runs outside chroot)
+for conf in /cdrom/bootstrap/bootstrap.conf /tmp/bootstrap.conf; do
+    if [[ -f "${conf}" ]]; then
+        # shellcheck source=/dev/null
+        source "${conf}"
+        DEV_USER="${INSTALL_USERNAME:-}"
+        break
+    fi
+done
+
+# Fallback: find the first non-root human user
+if [[ -z "${DEV_USER}" ]]; then
+    DEV_USER=$(awk -F: '$3 >= 1000 && $3 < 65000 {print $1; exit}' /etc/passwd)
 fi
+
+if [[ -z "${DEV_USER}" ]]; then
+    DEV_USER="dev"
+    log "WARNING: Could not detect username, falling back to '${DEV_USER}'"
+fi
+
+log "Bootstrap starting for user '${DEV_USER}'"
 WORKSPACE="/home/${DEV_USER}/workspace"
 
-log() { echo "[localbooth] $(date '+%F %T') — $*"; }
-
 # ── Docker ─────────────────────────────────────────────────────────────
-log "Adding ${DEV_USER} to the docker group"
-usermod -aG docker "${DEV_USER}"
+if getent group docker &>/dev/null; then
+    log "Adding ${DEV_USER} to the docker group"
+    usermod -aG docker "${DEV_USER}" || log "WARN: failed to add user to docker group"
+fi
 
-log "Enabling and starting Docker"
-systemctl enable docker
-systemctl start docker || true   # may fail inside chroot; fine
+log "Enabling Docker service"
+systemctl enable docker 2>/dev/null || true
 
 # ── SSH ────────────────────────────────────────────────────────────────
-log "Enabling SSH"
-systemctl enable ssh
+log "Enabling SSH service"
+systemctl enable ssh 2>/dev/null || true
 
 # ── Workspace directory ────────────────────────────────────────────────
 log "Creating workspace at ${WORKSPACE}"
 mkdir -p "${WORKSPACE}"
-chown "${DEV_USER}:${DEV_USER}" "${WORKSPACE}"
+chown "${DEV_USER}:${DEV_USER}" "${WORKSPACE}" 2>/dev/null || true
 
 # ── Git defaults ───────────────────────────────────────────────────────
-log "Configuring Git defaults for ${DEV_USER}"
-sudo -u "${DEV_USER}" git config --global init.defaultBranch main
-sudo -u "${DEV_USER}" git config --global pull.rebase true
-sudo -u "${DEV_USER}" git config --global core.editor vim
-sudo -u "${DEV_USER}" git config --global color.ui auto
+if command -v git &>/dev/null; then
+    log "Configuring Git defaults for ${DEV_USER}"
+    sudo -u "${DEV_USER}" git config --global init.defaultBranch main 2>/dev/null || true
+    sudo -u "${DEV_USER}" git config --global pull.rebase true 2>/dev/null || true
+    sudo -u "${DEV_USER}" git config --global core.editor vim 2>/dev/null || true
+    sudo -u "${DEV_USER}" git config --global color.ui auto 2>/dev/null || true
+fi
 
 # ── Shell aliases ──────────────────────────────────────────────────────
 log "Installing developer aliases"
@@ -64,16 +85,13 @@ alias k='kubectl'
 alias ..='cd ..'
 alias ...='cd ../..'
 ALIASES
-chown "${DEV_USER}:${DEV_USER}" "${ALIAS_FILE}"
+chown "${DEV_USER}:${DEV_USER}" "${ALIAS_FILE}" 2>/dev/null || true
 
 # ── Optional: kubectl ──────────────────────────────────────────────────
-# If a kubectl binary was bundled on the install media, install it.
 KUBECTL_SRC="/cdrom/extras/kubectl"
 if [[ -f "${KUBECTL_SRC}" ]]; then
     log "Installing kubectl from install media"
     install -o root -g root -m 0755 "${KUBECTL_SRC}" /usr/local/bin/kubectl
-else
-    log "kubectl binary not found on media — skipping"
 fi
 
 # ── Done ───────────────────────────────────────────────────────────────

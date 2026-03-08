@@ -138,6 +138,7 @@ if [[ "${INSTALL_PKG_SOURCE}" == "online" ]]; then
     - curtin in-target --target=/target -- apt-get install -y ${PACKAGES_SPACE}
     # Run the bootstrap provisioning script
     - cp /cdrom/bootstrap/bootstrap.sh /target/tmp/bootstrap.sh
+    - cp /cdrom/bootstrap/bootstrap.conf /target/tmp/bootstrap.conf || true
     - chmod +x /target/tmp/bootstrap.sh
     - curtin in-target --target=/target -- /tmp/bootstrap.sh
 
@@ -165,6 +166,7 @@ else
     - mv /target/etc/apt/sources.list.d/ubuntu.sources.bak /target/etc/apt/sources.list.d/ubuntu.sources || true
     # Run the bootstrap provisioning script
     - cp /cdrom/bootstrap/bootstrap.sh /target/tmp/bootstrap.sh
+    - cp /cdrom/bootstrap/bootstrap.conf /target/tmp/bootstrap.conf || true
     - chmod +x /target/tmp/bootstrap.sh
     - curtin in-target --target=/target -- /tmp/bootstrap.sh
 
