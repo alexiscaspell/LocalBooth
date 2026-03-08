@@ -42,6 +42,7 @@ fi
 
 # ── STEP 1.5 — Generate user-data from config ────────────────────────
 log "=== Generating autoinstall user-data ==="
+log "Config: PKG_SOURCE=${INSTALL_PKG_SOURCE:-unset}, INTERACTIVE=${INSTALL_INTERACTIVE:-unset}"
 bash "${ROOT_DIR}/build/generate-userdata.sh" "${ROOT_DIR}"
 
 # ── STEP 2 & 3 — Download packages & build repo (offline mode only) ──
