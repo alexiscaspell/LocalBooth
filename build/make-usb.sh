@@ -107,6 +107,14 @@ if [[ "${GUI}" == "true" ]]; then
     else
         echo 'INSTALL_INTERACTIVE="yes"' >> "${CONF_FILE}"
     fi
+    # Verify the config was updated correctly
+    if ! grep -q 'INSTALL_INTERACTIVE="yes"' "${CONF_FILE}"; then
+        echo "ERROR: Failed to set INSTALL_INTERACTIVE=yes in ${CONF_FILE}" >&2
+        echo "  Current content:" >&2
+        cat "${CONF_FILE}" >&2
+        exit 1
+    fi
+    log "Verified: INSTALL_INTERACTIVE=yes in install.conf"
 fi
 
 # ── Prepare directories ──────────────────────────────────────────────
@@ -129,7 +137,28 @@ docker run --rm \
     -v "${OUTPUT_DIR}:/output" \
     -v "${ISO_CACHE_DIR}:/iso-cache" \
     -v "${ROOT_DIR}/config:/localbooth/config" \
+    -v "${ROOT_DIR}/autoinstall:/localbooth/autoinstall" \
     "${IMAGE_NAME}"
+
+# ── Validate generated user-data ─────────────────────────────────────
+USERDATA_FILE="${ROOT_DIR}/autoinstall/user-data"
+if [[ "${GUI}" == "true" ]]; then
+    if grep -q 'interactive-config.sh' "${USERDATA_FILE}" 2>/dev/null; then
+        log "Verified: interactive TUI is in the generated user-data"
+    else
+        echo "" >&2
+        echo "WARNING: --gui was passed but interactive-config.sh was NOT found" >&2
+        echo "  in the generated user-data. The TUI will NOT appear at boot." >&2
+        echo "" >&2
+        echo "  Check that INSTALL_INTERACTIVE=yes is in config/install.conf" >&2
+        echo "  Current install.conf:" >&2
+        cat "${CONF_FILE}" >&2
+        echo "" >&2
+        echo "  Generated user-data:" >&2
+        cat "${USERDATA_FILE}" >&2
+        echo "" >&2
+    fi
+fi
 
 # ── Find the output ISO ──────────────────────────────────────────────
 ISO_FILE=$(find "${OUTPUT_DIR}" -maxdepth 1 -name '*.iso' -type f | head -1)
