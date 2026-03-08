@@ -12,7 +12,15 @@
 # ──────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
-TTY="/dev/console"
+# Use the TTY we were redirected to (tty2 via chvt in early-commands).
+# Fall back to /dev/tty2, then /dev/console.
+if [ -t 0 ]; then
+    TTY="$(tty)"
+elif [ -e /dev/tty2 ]; then
+    TTY="/dev/tty2"
+else
+    TTY="/dev/console"
+fi
 TITLE="LocalBooth — Install Configuration"
 USB_ROOT=""
 

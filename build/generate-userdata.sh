@@ -151,8 +151,14 @@ USERDATA
 
 if [[ "${INSTALL_INTERACTIVE}" == "yes" ]]; then
     log "Interactive mode enabled — adding TUI to early-commands"
-    cat >> "${OUTPUT}" <<USERDATA
-    - bash /cdrom/scripts/interactive-config.sh </dev/console >/dev/console 2>&1
+    cat >> "${OUTPUT}" <<'USERDATA'
+    - |
+      # Switch to tty2 so the TUI is visible (subiquity owns tty1).
+      chvt 2
+      bash /cdrom/scripts/interactive-config.sh </dev/tty2 >/dev/tty2 2>&1
+      # If the script returns (no key pressed / countdown expired),
+      # switch back to tty1 so subiquity can continue.
+      chvt 1
 USERDATA
 fi
 
