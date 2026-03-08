@@ -26,7 +26,6 @@ DEF_TIMEZONE="UTC"
 DEF_DISK_LAYOUT="lvm"
 DEF_SSH="yes"
 DEF_PKG_SOURCE="online"
-DEF_INTERACTIVE="no"
 
 # ── Load existing config if present ──────────────────────────────────
 if [[ -f "${CONF_FILE}" ]]; then
@@ -41,7 +40,6 @@ if [[ -f "${CONF_FILE}" ]]; then
     DEF_DISK_LAYOUT="${INSTALL_DISK_LAYOUT:-${DEF_DISK_LAYOUT}}"
     DEF_SSH="${INSTALL_SSH:-${DEF_SSH}}"
     DEF_PKG_SOURCE="${INSTALL_PKG_SOURCE:-${DEF_PKG_SOURCE}}"
-    DEF_INTERACTIVE="${INSTALL_INTERACTIVE:-${DEF_INTERACTIVE}}"
 fi
 
 # ── Check for --defaults flag ────────────────────────────────────────
@@ -214,11 +212,6 @@ PKG_SOURCE_OPTIONS=(
     "offline"
 )
 
-INTERACTIVE_OPTIONS=(
-    "no"
-    "yes"
-)
-
 # ── Interactive prompts ──────────────────────────────────────────────
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
@@ -240,8 +233,9 @@ ask_menu "Disk layout"     "${DEF_DISK_LAYOUT}" "INSTALL_DISK_LAYOUT" "${DISK_LA
 ask_menu "Enable SSH"      "${DEF_SSH}"         "INSTALL_SSH"         "${SSH_OPTIONS[@]}"
 ask_menu "Package source (online = needs internet during install, offline = bundled in USB)" \
                           "${DEF_PKG_SOURCE}"  "INSTALL_PKG_SOURCE"  "${PKG_SOURCE_OPTIONS[@]}"
-ask_menu "Interactive config at boot (TUI to change settings before install — requires writable USB)" \
-                          "${DEF_INTERACTIVE}" "INSTALL_INTERACTIVE" "${INTERACTIVE_OPTIONS[@]}"
+
+# INSTALL_INTERACTIVE is controlled exclusively by --gui flag in make-usb.sh
+INSTALL_INTERACTIVE="${INSTALL_INTERACTIVE:-no}"
 
 # ── Write config file ────────────────────────────────────────────────
 cat > "${CONF_FILE}" <<EOF
@@ -271,7 +265,6 @@ printf "  │  Timezone:    %-34s │\n" "${INSTALL_TIMEZONE}"
 printf "  │  Disk layout: %-34s │\n" "${INSTALL_DISK_LAYOUT}"
 printf "  │  SSH:         %-34s │\n" "${INSTALL_SSH}"
 printf "  │  Packages:    %-34s │\n" "${INSTALL_PKG_SOURCE}"
-printf "  │  Interactive: %-34s │\n" "${INSTALL_INTERACTIVE}"
 echo "  └──────────────────────────────────────────────────┘"
 echo ""
 echo "  ✓ Configuration saved to config/install.conf"
