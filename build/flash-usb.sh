@@ -240,23 +240,33 @@ if [[ "${WRITABLE}" == "true" ]]; then
         USB_MOUNT=$(mktemp -d)
         ISO_MOUNT=$(mktemp -d)
 
-        sudo mount "${DEVICE}1" "${USB_MOUNT}"
+        # Mount with -o flush so the kernel writes data to USB continuously
+        # instead of caching everything and flushing at unmount (which hangs).
+        sudo mount -o flush "${DEVICE}1" "${USB_MOUNT}"
         sudo mount -o loop,ro "${ISO_FILE}" "${ISO_MOUNT}"
 
         log "Copying files to USB (this may take a few minutes)..."
+        log "DO NOT remove the USB until you see 'USB ready'."
         sudo rsync -a --no-links --info=progress2 "${ISO_MOUNT}/" "${USB_MOUNT}/"
 
         log "Unmounting ISO"
         sudo umount "${ISO_MOUNT}" 2>/dev/null || true
         rmdir "${ISO_MOUNT}" 2>/dev/null || true
 
-        log "Flushing writes and unmounting USB (may take a minute)..."
-        # umount implicitly flushes; use a timeout to avoid hanging forever
-        if ! timeout 180 sudo umount "${USB_MOUNT}" 2>/dev/null; then
-            log "WARN: normal unmount timed out — using lazy unmount"
+        log "Flushing remaining writes to USB..."
+        sync -f "${USB_MOUNT}/EFI" 2>/dev/null || sync 2>/dev/null || true
+
+        log "Unmounting USB..."
+        if ! timeout 120 sudo umount "${USB_MOUNT}" 2>/dev/null; then
+            log "WARN: normal unmount timed out — forcing"
+            sudo umount -f "${USB_MOUNT}" 2>/dev/null || true
+            sleep 2
             sudo umount -l "${USB_MOUNT}" 2>/dev/null || true
         fi
         rmdir "${USB_MOUNT}" 2>/dev/null || true
+
+        log "Ejecting ${DEVICE}"
+        sudo eject "${DEVICE}" 2>/dev/null || true
     fi
 
 else
@@ -295,7 +305,7 @@ fi
 
 echo ""
 echo "  ═══════════════════════════════════════════════════════"
-echo "  USB ready."
+echo "  ✓ USB ready — safe to remove."
 echo ""
 echo "  Plug it into any machine, boot from USB (UEFI), and"
 echo "  the install will run automatically."
