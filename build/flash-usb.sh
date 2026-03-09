@@ -233,8 +233,8 @@ if [[ "${WRITABLE}" == "true" ]]; then
     else
         log "Wiping existing partition table on ${DEVICE}"
         sudo wipefs -af "${DEVICE}"
-        log "Partitioning ${DEVICE} as MBR + FAT32 (EFI type)"
-        echo ',,EF,*' | sudo sfdisk --force --label dos --wipe always "${DEVICE}"
+        log "Partitioning ${DEVICE} as MBR + FAT32"
+        echo ',,0C,*' | sudo sfdisk --force --label dos --wipe always "${DEVICE}"
         sudo mkfs.vfat -F 32 -n LOCALBOOTH "${DEVICE}1"
 
         USB_MOUNT=$(mktemp -d)
