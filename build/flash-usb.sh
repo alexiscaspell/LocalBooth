@@ -210,8 +210,8 @@ if [[ "${WRITABLE}" == "true" ]]; then
     log "Creating writable FAT32 USB (UEFI boot)"
 
     if [[ "${OS}" == "Darwin" ]]; then
-        log "Formatting ${DEVICE} as FAT32 (GPT/EFI)"
-        diskutil eraseDisk MS-DOS LOCALBOOTH GPTFormat "${DEVICE}"
+        log "Formatting ${DEVICE} as FAT32 (MBR)"
+        diskutil eraseDisk MS-DOS LOCALBOOTH MBR "${DEVICE}"
         USB_MOUNT="/Volumes/LOCALBOOTH"
 
         log "Mounting ISO"
@@ -231,25 +231,10 @@ if [[ "${WRITABLE}" == "true" ]]; then
         diskutil eject "${DEVICE}" 2>/dev/null || true
 
     else
-        # Ensure GPT tools are available
-        for tool in sgdisk partprobe; do
-            if ! command -v "${tool}" &>/dev/null; then
-                log "Installing ${tool}..."
-                if command -v apt-get &>/dev/null; then
-                    sudo apt-get install -y gdisk parted 2>/dev/null
-                elif command -v dnf &>/dev/null; then
-                    sudo dnf install -y gdisk parted 2>/dev/null
-                fi
-                break
-            fi
-        done
-
         log "Wiping existing partition table on ${DEVICE}"
         sudo wipefs -af "${DEVICE}"
-        log "Partitioning ${DEVICE} as GPT + EFI System Partition"
-        sudo sgdisk --zap-all "${DEVICE}" 2>/dev/null || true
-        sudo sgdisk -n 1:0:0 -t 1:EF00 -c 1:"LOCALBOOTH" "${DEVICE}"
-        sudo partprobe "${DEVICE}" 2>/dev/null || sleep 1
+        log "Partitioning ${DEVICE} as MBR + FAT32 (EFI type)"
+        echo ',,EF,*' | sudo sfdisk --force --label dos --wipe always "${DEVICE}"
         sudo mkfs.vfat -F 32 -n LOCALBOOTH "${DEVICE}1"
 
         USB_MOUNT=$(mktemp -d)
