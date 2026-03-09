@@ -174,91 +174,97 @@ if [[ -f "${ROOT_DIR}/config/package-list.txt" ]]; then
     cp "${ROOT_DIR}/config/package-list.txt" "${USB_MOUNT}/config/package-list.txt"
 fi
 
-# Patch GRUB config on USB when toggling --gui / --no-gui
+# Patch GRUB config on USB when toggling --gui / --no-gui.
+# We patch the existing grub.cfg instead of replacing it to preserve
+# Secure Boot directives, module loads, and root device search.
 GRUB_USB="${USB_MOUNT}/boot/grub/grub.cfg"
 if [[ -n "${GUI}" && -f "${GRUB_USB}" ]]; then
-    VMLINUZ=$(grep -oP 'linux\s+\K\S+' "${GRUB_USB}" | head -1)
-    INITRD=$(grep -oP 'initrd\s+\K\S+' "${GRUB_USB}" | head -1)
+    VMLINUZ=$(awk '/linux/{for(i=1;i<=NF;i++) if($i ~ /^\//){print $i; exit}}' "${GRUB_USB}")
+    INITRD=$(awk '/initrd/{for(i=1;i<=NF;i++) if($i ~ /^\//){print $i; exit}}' "${GRUB_USB}")
     VMLINUZ="${VMLINUZ:-/casper/vmlinuz}"
     INITRD="${INITRD:-/casper/initrd}"
 
-    AUTOINSTALL_ARGS="autoinstall ds=nocloud\\;s=/cdrom/autoinstall/"
-
     if [[ "${GUI}" == "yes" ]]; then
-        cat > "${GRUB_USB}" <<GRUBCFG
-if loadfont /boot/grub/font.pf2 ; then
-    set gfxmode=auto
-    insmod efi_gop
-    insmod efi_uga
-    insmod gfxterm
-    terminal_output gfxterm
-fi
+        # Ensure autoinstall + lb.configure + quiet on all kernel lines
+        if ! grep -q 'lb.configure' "${GRUB_USB}"; then
+            if ! grep -q 'autoinstall' "${GRUB_USB}"; then
+                sed -i.bak 's|---$|quiet autoinstall ds=nocloud\\;s=/cdrom/autoinstall/ lb.configure ---|g' "${GRUB_USB}"
+            else
+                sed -i.bak 's|autoinstall|quiet autoinstall lb.configure|g' "${GRUB_USB}"
+            fi
+            rm -f "${GRUB_USB}.bak"
+        fi
 
-set menu_color_normal=white/black
-set menu_color_highlight=black/light-gray
+        # Rename first menuentry to "Configure"
+        if ! grep -q 'Configure Installation' "${GRUB_USB}"; then
+            FIRST_LINE=$(grep -n '^menuentry' "${GRUB_USB}" | head -1 | cut -d: -f1)
+            if [[ -n "${FIRST_LINE}" ]]; then
+                sed -i.bak "${FIRST_LINE}s/^menuentry \"[^\"]*\"/menuentry \"LocalBooth — Configure Installation\"/" "${GRUB_USB}"
+                rm -f "${GRUB_USB}.bak"
+            fi
+        fi
 
+        # Remove original timeout and prepend flag-check block
+        if ! grep -q '.configured' "${GRUB_USB}"; then
+            sed -i.bak '/^set timeout=.*/d' "${GRUB_USB}"
+            rm -f "${GRUB_USB}.bak"
+            TMPFLAG=$(mktemp)
+            cat > "${TMPFLAG}" <<'FLAGEOF'
+# LocalBooth: auto-select Install after first configuration
 if [ -f /autoinstall/.configured ]; then
-    set default=1
+    set default="LocalBooth — Install Ubuntu Server"
     set timeout=5
 else
     set default=0
     set timeout=0
 fi
 
-menuentry "LocalBooth — Configure Installation" {
-    set gfxpayload=keep
-    linux  ${VMLINUZ} quiet ${AUTOINSTALL_ARGS} lb.configure ---
-    initrd ${INITRD}
-}
+FLAGEOF
+            cat "${TMPFLAG}" "${GRUB_USB}" > "${GRUB_USB}.tmp"
+            mv "${GRUB_USB}.tmp" "${GRUB_USB}"
+            rm -f "${TMPFLAG}"
+        fi
+
+        # Append Install entry (no lb.configure)
+        if ! grep -q 'Install Ubuntu Server' "${GRUB_USB}"; then
+            cat >> "${GRUB_USB}" <<INSTALLEOF
 
 menuentry "LocalBooth — Install Ubuntu Server" {
     set gfxpayload=keep
-    linux  ${VMLINUZ} quiet ${AUTOINSTALL_ARGS} ---
+    linux  ${VMLINUZ} quiet autoinstall ds=nocloud\;s=/cdrom/autoinstall/ ---
     initrd ${INITRD}
 }
+INSTALLEOF
+        fi
 
-grub_platform
-if [ "\$grub_platform" = "efi" ]; then
-menuentry 'UEFI Firmware Settings' {
-    fwsetup
-}
-fi
-GRUBCFG
-        # Remove .configured flag so first boot goes to Configure
         rm -f "${USB_MOUNT}/autoinstall/.configured"
-        log "GRUB patched: two-entry interactive menu"
+        log "GRUB patched: Configure + Install entries (Secure Boot safe)"
     else
-        # Restore single-entry autoinstall GRUB config
-        cat > "${GRUB_USB}" <<GRUBCFG
-if loadfont /boot/grub/font.pf2 ; then
-    set gfxmode=auto
-    insmod efi_gop
-    insmod efi_uga
-    insmod gfxterm
-    terminal_output gfxterm
-fi
-
-set menu_color_normal=white/black
-set menu_color_highlight=black/light-gray
-
-set default=0
+        # Remove lb.configure and quiet from kernel lines
+        sed -i.bak 's/ lb.configure//g; s/ quiet autoinstall/ autoinstall/g' "${GRUB_USB}"
+        rm -f "${GRUB_USB}.bak"
+        # Remove the appended Install entry
+        sed -i.bak '/^menuentry "LocalBooth — Install Ubuntu Server"/,/^}/d' "${GRUB_USB}"
+        rm -f "${GRUB_USB}.bak"
+        # Remove the flag-check block (from comment to fi)
+        sed -i.bak '/^# LocalBooth: auto-select/,/^fi$/d' "${GRUB_USB}"
+        rm -f "${GRUB_USB}.bak"
+        # Rename Configure entry back
+        sed -i.bak 's/^menuentry "LocalBooth — Configure Installation"/menuentry "Try or Install Ubuntu Server"/' "${GRUB_USB}"
+        rm -f "${GRUB_USB}.bak"
+        # Restore simple timeout
+        if ! grep -q 'set timeout=' "${GRUB_USB}"; then
+            FIRST_LINE=$(grep -n '^menuentry' "${GRUB_USB}" | head -1 | cut -d: -f1)
+            sed -i.bak "${FIRST_LINE}i\\
 set timeout=1
-
-menuentry "Install Ubuntu Server" {
-    set gfxpayload=keep
-    linux  ${VMLINUZ} ${AUTOINSTALL_ARGS} ---
-    initrd ${INITRD}
-}
-
-grub_platform
-if [ "\$grub_platform" = "efi" ]; then
-menuentry 'UEFI Firmware Settings' {
-    fwsetup
-}
-fi
-GRUBCFG
+" "${GRUB_USB}"
+            rm -f "${GRUB_USB}.bak"
+        else
+            sed -i.bak 's/^set timeout=.*/set timeout=1/' "${GRUB_USB}"
+            rm -f "${GRUB_USB}.bak"
+        fi
         rm -f "${USB_MOUNT}/autoinstall/.configured"
-        log "GRUB patched: single-entry autoinstall"
+        log "GRUB patched: single-entry autoinstall (Secure Boot safe)"
     fi
 fi
 

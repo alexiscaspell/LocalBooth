@@ -128,64 +128,62 @@ if [[ -d "${EXTRAS_SRC}" ]]; then
 fi
 
 # ── Patch GRUB — add autoinstall kernel parameter ─────────────────────
+# We patch the existing grub.cfg rather than replacing it so that all
+# original module loads, root device search, and Secure Boot directives
+# are preserved.
 log "Patching GRUB configuration"
 GRUB_CFG="${EXTRACT_DIR}/boot/grub/grub.cfg"
 
 if [[ -f "${GRUB_CFG}" ]]; then
-    # Extract kernel and initrd paths from existing config
-    VMLINUZ=$(grep -oP 'linux\s+\K\S+' "${GRUB_CFG}" | head -1)
-    INITRD=$(grep -oP 'initrd\s+\K\S+' "${GRUB_CFG}" | head -1)
+    # Extract kernel and initrd paths before modifying anything
+    VMLINUZ=$(awk '/linux/{for(i=1;i<=NF;i++) if($i ~ /^\//){print $i; exit}}' "${GRUB_CFG}")
+    INITRD=$(awk '/initrd/{for(i=1;i<=NF;i++) if($i ~ /^\//){print $i; exit}}' "${GRUB_CFG}")
     VMLINUZ="${VMLINUZ:-/casper/vmlinuz}"
     INITRD="${INITRD:-/casper/initrd}"
     log "Kernel: ${VMLINUZ}  Initrd: ${INITRD}"
 
-    AUTOINSTALL_ARGS="autoinstall ds=nocloud\\;s=/cdrom/autoinstall/"
-
     if [[ "${INSTALL_INTERACTIVE}" == "yes" ]]; then
-        # Replace GRUB config with a two-entry menu:
-        #   1. "Configure Installation" — runs the TUI (passes lb.configure)
-        #   2. "Install Ubuntu Server"  — proceeds with autoinstall directly
-        # A .configured flag on the USB switches the default after first config.
-        cat > "${GRUB_CFG}" <<GRUBCFG
-if loadfont /boot/grub/font.pf2 ; then
-    set gfxmode=auto
-    insmod efi_gop
-    insmod efi_uga
-    insmod gfxterm
-    terminal_output gfxterm
-fi
+        # 1. Add autoinstall + lb.configure + quiet to all kernel lines.
+        #    The original entry becomes the "Configure" entry.
+        sed -i 's|---$|quiet autoinstall ds=nocloud\\;s=/cdrom/autoinstall/ lb.configure ---|g' "${GRUB_CFG}"
 
-set menu_color_normal=white/black
-set menu_color_highlight=black/light-gray
+        # 2. Rename the first menuentry to "Configure Installation"
+        FIRST_MENU_LINE=$(grep -n '^menuentry' "${GRUB_CFG}" | head -1 | cut -d: -f1)
+        if [[ -n "${FIRST_MENU_LINE}" ]]; then
+            sed -i "${FIRST_MENU_LINE}s/^menuentry \"[^\"]*\"/menuentry \"LocalBooth — Configure Installation\"/" "${GRUB_CFG}"
+        fi
 
+        # 3. Remove original timeout (we'll add flag-based logic)
+        sed -i '/^set timeout=.*/d' "${GRUB_CFG}"
+
+        # 4. Prepend flag-file detection block to the config.
+        #    Uses entry title as default (robust against entry count changes).
+        TMPFLAG=$(mktemp)
+        cat > "${TMPFLAG}" <<'FLAGEOF'
+# LocalBooth: auto-select Install after first configuration
 if [ -f /autoinstall/.configured ]; then
-    set default=1
+    set default="LocalBooth — Install Ubuntu Server"
     set timeout=5
 else
     set default=0
     set timeout=0
 fi
 
-menuentry "LocalBooth — Configure Installation" {
-    set gfxpayload=keep
-    linux  ${VMLINUZ} quiet ${AUTOINSTALL_ARGS} lb.configure ---
-    initrd ${INITRD}
-}
+FLAGEOF
+        cat "${TMPFLAG}" "${GRUB_CFG}" > "${GRUB_CFG}.tmp"
+        mv "${GRUB_CFG}.tmp" "${GRUB_CFG}"
+        rm -f "${TMPFLAG}"
+
+        # 5. Append an "Install" entry at the end (no lb.configure).
+        cat >> "${GRUB_CFG}" <<INSTALLEOF
 
 menuentry "LocalBooth — Install Ubuntu Server" {
     set gfxpayload=keep
-    linux  ${VMLINUZ} quiet ${AUTOINSTALL_ARGS} ---
+    linux  ${VMLINUZ} quiet autoinstall ds=nocloud\;s=/cdrom/autoinstall/ ---
     initrd ${INITRD}
 }
-
-grub_platform
-if [ "\$grub_platform" = "efi" ]; then
-menuentry 'UEFI Firmware Settings' {
-    fwsetup
-}
-fi
-GRUBCFG
-        log "GRUB: two-entry interactive menu (Configure + Install)"
+INSTALLEOF
+        log "GRUB: patched with Configure + Install entries (Secure Boot safe)"
     else
         sed -i 's|---$|autoinstall ds=nocloud\\;s=/cdrom/autoinstall/ ---|g' "${GRUB_CFG}"
         sed -i 's/^set timeout=.*/set timeout=1/' "${GRUB_CFG}"
