@@ -132,14 +132,62 @@ log "Patching GRUB configuration"
 GRUB_CFG="${EXTRACT_DIR}/boot/grub/grub.cfg"
 
 if [[ -f "${GRUB_CFG}" ]]; then
-    # Insert 'autoinstall' parameter and point to our cloud-init data
-    # The ds=nocloud flag tells cloud-init where to find user-data/meta-data.
-    sed -i 's|---$|autoinstall ds=nocloud\\;s=/cdrom/autoinstall/ ---|g' "${GRUB_CFG}"
+    # Extract kernel and initrd paths from existing config
+    VMLINUZ=$(grep -oP 'linux\s+\K\S+' "${GRUB_CFG}" | head -1)
+    INITRD=$(grep -oP 'initrd\s+\K\S+' "${GRUB_CFG}" | head -1)
+    VMLINUZ="${VMLINUZ:-/casper/vmlinuz}"
+    INITRD="${INITRD:-/casper/initrd}"
+    log "Kernel: ${VMLINUZ}  Initrd: ${INITRD}"
+
+    AUTOINSTALL_ARGS="autoinstall ds=nocloud\\;s=/cdrom/autoinstall/"
+
     if [[ "${INSTALL_INTERACTIVE}" == "yes" ]]; then
-        # Skip GRUB menu entirely — TUI is the first screen the user sees
-        sed -i 's/^set timeout=.*/set timeout=0/' "${GRUB_CFG}"
-        log "GRUB timeout set to 0 (interactive TUI mode)"
+        # Replace GRUB config with a two-entry menu:
+        #   1. "Configure Installation" — runs the TUI (passes lb.configure)
+        #   2. "Install Ubuntu Server"  — proceeds with autoinstall directly
+        # A .configured flag on the USB switches the default after first config.
+        cat > "${GRUB_CFG}" <<GRUBCFG
+if loadfont /boot/grub/font.pf2 ; then
+    set gfxmode=auto
+    insmod efi_gop
+    insmod efi_uga
+    insmod gfxterm
+    terminal_output gfxterm
+fi
+
+set menu_color_normal=white/black
+set menu_color_highlight=black/light-gray
+
+if [ -f /autoinstall/.configured ]; then
+    set default=1
+    set timeout=5
+else
+    set default=0
+    set timeout=0
+fi
+
+menuentry "LocalBooth — Configure Installation" {
+    set gfxpayload=keep
+    linux  ${VMLINUZ} quiet ${AUTOINSTALL_ARGS} lb.configure ---
+    initrd ${INITRD}
+}
+
+menuentry "LocalBooth — Install Ubuntu Server" {
+    set gfxpayload=keep
+    linux  ${VMLINUZ} quiet ${AUTOINSTALL_ARGS} ---
+    initrd ${INITRD}
+}
+
+grub_platform
+if [ "\$grub_platform" = "efi" ]; then
+menuentry 'UEFI Firmware Settings' {
+    fwsetup
+}
+fi
+GRUBCFG
+        log "GRUB: two-entry interactive menu (Configure + Install)"
     else
+        sed -i 's|---$|autoinstall ds=nocloud\\;s=/cdrom/autoinstall/ ---|g' "${GRUB_CFG}"
         sed -i 's/^set timeout=.*/set timeout=1/' "${GRUB_CFG}"
     fi
     log "GRUB patched"

@@ -174,6 +174,94 @@ if [[ -f "${ROOT_DIR}/config/package-list.txt" ]]; then
     cp "${ROOT_DIR}/config/package-list.txt" "${USB_MOUNT}/config/package-list.txt"
 fi
 
+# Patch GRUB config on USB when toggling --gui / --no-gui
+GRUB_USB="${USB_MOUNT}/boot/grub/grub.cfg"
+if [[ -n "${GUI}" && -f "${GRUB_USB}" ]]; then
+    VMLINUZ=$(grep -oP 'linux\s+\K\S+' "${GRUB_USB}" | head -1)
+    INITRD=$(grep -oP 'initrd\s+\K\S+' "${GRUB_USB}" | head -1)
+    VMLINUZ="${VMLINUZ:-/casper/vmlinuz}"
+    INITRD="${INITRD:-/casper/initrd}"
+
+    AUTOINSTALL_ARGS="autoinstall ds=nocloud\\;s=/cdrom/autoinstall/"
+
+    if [[ "${GUI}" == "yes" ]]; then
+        cat > "${GRUB_USB}" <<GRUBCFG
+if loadfont /boot/grub/font.pf2 ; then
+    set gfxmode=auto
+    insmod efi_gop
+    insmod efi_uga
+    insmod gfxterm
+    terminal_output gfxterm
+fi
+
+set menu_color_normal=white/black
+set menu_color_highlight=black/light-gray
+
+if [ -f /autoinstall/.configured ]; then
+    set default=1
+    set timeout=5
+else
+    set default=0
+    set timeout=0
+fi
+
+menuentry "LocalBooth — Configure Installation" {
+    set gfxpayload=keep
+    linux  ${VMLINUZ} quiet ${AUTOINSTALL_ARGS} lb.configure ---
+    initrd ${INITRD}
+}
+
+menuentry "LocalBooth — Install Ubuntu Server" {
+    set gfxpayload=keep
+    linux  ${VMLINUZ} quiet ${AUTOINSTALL_ARGS} ---
+    initrd ${INITRD}
+}
+
+grub_platform
+if [ "\$grub_platform" = "efi" ]; then
+menuentry 'UEFI Firmware Settings' {
+    fwsetup
+}
+fi
+GRUBCFG
+        # Remove .configured flag so first boot goes to Configure
+        rm -f "${USB_MOUNT}/autoinstall/.configured"
+        log "GRUB patched: two-entry interactive menu"
+    else
+        # Restore single-entry autoinstall GRUB config
+        cat > "${GRUB_USB}" <<GRUBCFG
+if loadfont /boot/grub/font.pf2 ; then
+    set gfxmode=auto
+    insmod efi_gop
+    insmod efi_uga
+    insmod gfxterm
+    terminal_output gfxterm
+fi
+
+set menu_color_normal=white/black
+set menu_color_highlight=black/light-gray
+
+set default=0
+set timeout=1
+
+menuentry "Install Ubuntu Server" {
+    set gfxpayload=keep
+    linux  ${VMLINUZ} ${AUTOINSTALL_ARGS} ---
+    initrd ${INITRD}
+}
+
+grub_platform
+if [ "\$grub_platform" = "efi" ]; then
+menuentry 'UEFI Firmware Settings' {
+    fwsetup
+}
+fi
+GRUBCFG
+        rm -f "${USB_MOUNT}/autoinstall/.configured"
+        log "GRUB patched: single-entry autoinstall"
+    fi
+fi
+
 sync
 
 # ── Read config for display ──────────────────────────────────────────

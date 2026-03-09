@@ -2,18 +2,18 @@
 # ──────────────────────────────────────────────────────────────────────
 # LocalBooth — interactive TUI for boot-time configuration
 #
-# Runs during autoinstall early-commands on the target machine.
+# Launched by the "Configure Installation" GRUB entry (lb.configure).
 # Shows a whiptail-based TUI that lets the user change hostname, user,
 # password, locale, keyboard, timezone, disk layout and SSH settings.
-# After configuration, regenerates user-data on the writable USB and
-# reboots so the installer picks up the new values.
+# After configuration, regenerates user-data on the writable USB,
+# creates a .configured flag, and reboots so the installer picks up
+# the new values via the "Install" GRUB entry.
 #
-# Requires a writable USB (FAT32, created with flash-usb.sh --writable).
+# Requires a writable USB (FAT32, created with make-usb.sh --writable --gui).
 # ──────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
-# Use the TTY we were redirected to (tty2 via chvt in early-commands).
-# Fall back to /dev/tty2, then /dev/console.
+# ── TTY detection ─────────────────────────────────────────────────────
 if [ -t 0 ]; then
     TTY="$(tty)"
 elif [ -e /dev/tty2 ]; then
@@ -34,13 +34,13 @@ done
 
 if [[ -z "${USB_ROOT}" ]]; then
     echo "[localbooth] ERROR: Cannot find USB mount with autoinstall/user-data" >&2
-    echo "[localbooth] Interactive config requires a writable USB (--writable)" >&2
     exit 0
 fi
 
 USERDATA="${USB_ROOT}/autoinstall/user-data"
 USERDATA_ROOT="${USB_ROOT}/user-data"
 CONF="${USB_ROOT}/bootstrap/bootstrap.conf"
+CONFIGURED_FLAG="${USB_ROOT}/autoinstall/.configured"
 
 # ── Load current defaults from bootstrap.conf ────────────────────────
 INSTALL_USERNAME="dev"
@@ -58,27 +58,29 @@ if [[ -f "${CONF}" ]]; then
     source "${CONF}"
 fi
 
-# ── Countdown prompt — skip TUI if no key pressed ────────────────────
-show_countdown() {
-    local secs=30
-    while (( secs > 0 )); do
-        printf "\r[localbooth] Press any key in %2d seconds to configure install (or wait to auto-install)..." "${secs}" > "${TTY}"
-        if read -rsn1 -t1 <"${TTY}" 2>/dev/null; then
-            printf "\n" > "${TTY}"
-            return 0
-        fi
-        secs=$((secs - 1))
-    done
-    printf "\n[localbooth] No input — proceeding with saved configuration.\n" > "${TTY}"
-    return 1
-}
+# ── Ensure USB is writable ───────────────────────────────────────────
+mount -o remount,rw "${USB_ROOT}" 2>/dev/null || true
 
-if ! show_countdown; then
-    exit 0
+if ! touch "${USERDATA}" 2>/dev/null; then
+    whiptail --title "${TITLE}" --msgbox \
+        "ERROR: USB is not writable.\n\nThe USB was not created with --writable.\nRebooting..." \
+        10 60 <"${TTY}" >"${TTY}"
+    reboot -f
+fi
+
+# ── Welcome screen ───────────────────────────────────────────────────
+whiptail --title "${TITLE}" --yesno \
+    "Welcome to LocalBooth.\n\nConfigure the installation parameters before proceeding.\nPress <Yes> to configure, or <No> to install with current values." \
+    12 65 <"${TTY}" >"${TTY}"
+
+if [[ $? -ne 0 ]]; then
+    # User chose "No" — skip configuration, mark as configured, reboot to install
+    touch "${CONFIGURED_FLAG}" 2>/dev/null || true
+    sync
+    reboot -f
 fi
 
 # ── Whiptail helpers ─────────────────────────────────────────────────
-WT="whiptail --title ${TITLE}"
 LINES=20
 COLS=70
 
@@ -231,12 +233,50 @@ USERDATA
     install-server: ${SSH_INSTALL}
     allow-pw: ${SSH_ALLOW_PW}
 
+  early-commands:
+    - |
+      # Fix missing symlinks on FAT32 writable USB (bind-mount approach)
+      if [ ! -e /cdrom/ubuntu ] && [ -d /cdrom/dists ]; then
+        mkdir -p /cdrom/ubuntu 2>/dev/null || true
+        mount --bind /cdrom /cdrom/ubuntu 2>/dev/null || true
+      fi
+      CODENAME=""
+      for d in /cdrom/dists/*/; do
+        name=\$(basename "\$d")
+        case "\$name" in stable|unstable) continue ;; esac
+        CODENAME="\$name"
+        break
+      done
+      if [ -n "\$CODENAME" ]; then
+        if [ ! -e /cdrom/dists/stable ]; then
+          mkdir -p /cdrom/dists/stable 2>/dev/null || true
+          mount --bind "/cdrom/dists/\$CODENAME" /cdrom/dists/stable 2>/dev/null || true
+        fi
+        if [ ! -e /cdrom/dists/unstable ]; then
+          mkdir -p /cdrom/dists/unstable 2>/dev/null || true
+          mount --bind "/cdrom/dists/\$CODENAME" /cdrom/dists/unstable 2>/dev/null || true
+        fi
+      fi
+    - |
+      # Run TUI only when the "Configure" GRUB entry was selected
+      if grep -q lb.configure /proc/cmdline; then
+        mount -o remount,rw /cdrom 2>/dev/null || true
+        if command -v openvt >/dev/null 2>&1; then
+          openvt -s -w -- bash /cdrom/scripts/interactive-config.sh
+        elif command -v chvt >/dev/null 2>&1; then
+          chvt 2
+          bash /cdrom/scripts/interactive-config.sh </dev/tty2 >/dev/tty2 2>&1
+          chvt 1
+        else
+          bash /cdrom/scripts/interactive-config.sh </dev/tty1 >/dev/tty1 2>&1
+        fi
+      fi
+
 USERDATA
 
     if [[ "${INSTALL_PKG_SOURCE}" == "online" ]]; then
         cat >> "${outfile}" <<USERDATA
   late-commands:
-    # Wait for network
     - |
       echo '[localbooth] Waiting for network...'
       for i in \$(seq 1 60); do
@@ -293,16 +333,6 @@ USERDATA
 # ── Write files to USB ───────────────────────────────────────────────
 echo "[localbooth] Writing new configuration to USB..." > "${TTY}"
 
-# Ensure USB is mounted read-write (Ubuntu mounts /cdrom read-only by default)
-mount -o remount,rw "${USB_ROOT}" 2>/dev/null || true
-
-if ! touch "${USERDATA}" 2>/dev/null; then
-    whiptail --title "${TITLE}" --msgbox \
-        "ERROR: USB is not writable.\n\nThe USB was not created with --writable.\nContinuing with saved configuration." \
-        10 60 <"${TTY}" >"${TTY}"
-    exit 0
-fi
-
 write_userdata "${USERDATA}"
 cp "${USERDATA}" "${USERDATA_ROOT}" 2>/dev/null || true
 
@@ -319,12 +349,15 @@ INSTALL_SSH="${INSTALL_SSH}"
 INSTALL_PKG_SOURCE="${INSTALL_PKG_SOURCE}"
 EOF
 
+# Mark as configured so GRUB defaults to "Install" on next boot
+touch "${CONFIGURED_FLAG}" 2>/dev/null || true
+
 sync
 
 # ── Show summary and reboot ──────────────────────────────────────────
 whiptail --title "${TITLE}" --msgbox "\
-Configuration saved. The system will now reboot \
-and the install will start automatically with:\n\n\
+Configuration saved!\n\n\
+The system will reboot and start the installation with:\n\n\
   User:     ${INSTALL_USERNAME}\n\
   Hostname: ${INSTALL_HOSTNAME}\n\
   Locale:   ${INSTALL_LOCALE}\n\

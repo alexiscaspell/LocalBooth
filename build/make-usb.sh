@@ -143,11 +143,11 @@ docker run --rm \
 # ── Validate generated user-data ─────────────────────────────────────
 USERDATA_FILE="${ROOT_DIR}/autoinstall/user-data"
 if [[ "${GUI}" == "true" ]]; then
-    if grep -q 'interactive-config.sh' "${USERDATA_FILE}" 2>/dev/null; then
-        log "Verified: interactive TUI is in the generated user-data"
+    if grep -q 'lb.configure' "${USERDATA_FILE}" 2>/dev/null; then
+        log "Verified: TUI early-command (lb.configure gate) is in user-data"
     else
         echo "" >&2
-        echo "WARNING: --gui was passed but interactive-config.sh was NOT found" >&2
+        echo "WARNING: --gui was passed but lb.configure gate was NOT found" >&2
         echo "  in the generated user-data. The TUI will NOT appear at boot." >&2
         echo "" >&2
         echo "  Check that INSTALL_INTERACTIVE=yes is in config/install.conf" >&2
