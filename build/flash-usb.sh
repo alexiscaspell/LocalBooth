@@ -263,11 +263,11 @@ if [[ "${WRITABLE}" == "true" ]]; then
         echo "  USB EFI contents:"
         ls -la "${USB_MOUNT}/EFI/BOOT/" 2>/dev/null || echo "  [NOT FOUND on USB]"
         echo ""
-        echo "  ISO GRUB config (first 5 lines):"
-        head -5 "${ISO_MOUNT}/boot/grub/grub.cfg" 2>/dev/null || echo "  [NOT FOUND]"
+        echo "  === ISO GRUB config (FULL) ==="
+        cat "${ISO_MOUNT}/boot/grub/grub.cfg" 2>/dev/null || echo "  [NOT FOUND]"
         echo ""
-        echo "  USB GRUB config (first 5 lines):"
-        head -5 "${USB_MOUNT}/boot/grub/grub.cfg" 2>/dev/null || echo "  [NOT FOUND]"
+        echo "  === USB GRUB config (FULL) ==="
+        cat "${USB_MOUNT}/boot/grub/grub.cfg" 2>/dev/null || echo "  [NOT FOUND]"
         echo ""
         for f in BOOTx64.EFI grubx64.efi shimx64.efi mmx64.efi; do
             if [[ -f "${USB_MOUNT}/EFI/BOOT/${f}" ]]; then

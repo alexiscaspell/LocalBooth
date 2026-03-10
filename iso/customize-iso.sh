@@ -134,7 +134,13 @@ fi
 log "Patching GRUB configuration"
 GRUB_CFG="${EXTRACT_DIR}/boot/grub/grub.cfg"
 
+log "DEBUG: INSTALL_INTERACTIVE='${INSTALL_INTERACTIVE:-<unset>}'"
+log "DEBUG: GRUB_CFG path = ${GRUB_CFG}"
+
 if [[ -f "${GRUB_CFG}" ]]; then
+    log "DEBUG: grub.cfg BEFORE patching (first 30 lines):"
+    head -30 "${GRUB_CFG}" | while IFS= read -r line; do log "  > ${line}"; done
+
     # Extract kernel and initrd paths before modifying anything
     VMLINUZ=$(awk '/linux/{for(i=1;i<=NF;i++) if($i ~ /^\//){print $i; exit}}' "${GRUB_CFG}")
     INITRD=$(awk '/initrd/{for(i=1;i<=NF;i++) if($i ~ /^\//){print $i; exit}}' "${GRUB_CFG}")
@@ -185,9 +191,14 @@ menuentry "LocalBooth — Install Ubuntu Server" {
 INSTALLEOF
         log "GRUB: patched with Configure + Install entries (Secure Boot safe)"
     else
+        log "DEBUG: entering NON-interactive branch"
         sed -i 's|---$|autoinstall ds=nocloud\\;s=/cdrom/autoinstall/ ---|g' "${GRUB_CFG}"
         sed -i 's/^set timeout=.*/set timeout=1/' "${GRUB_CFG}"
     fi
+
+    log "DEBUG: grub.cfg AFTER patching (first 30 lines):"
+    head -30 "${GRUB_CFG}" | while IFS= read -r line; do log "  > ${line}"; done
+    log "DEBUG: grub.cfg total lines: $(wc -l < "${GRUB_CFG}")"
     log "GRUB patched"
 else
     log "WARN: grub.cfg not found at expected path — you may need to patch it manually"
