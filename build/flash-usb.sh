@@ -255,6 +255,30 @@ if [[ "${WRITABLE}" == "true" ]]; then
         # Exclude 'ubuntu' to avoid infinite recursion (ubuntu -> . on the ISO).
         sudo rsync -rLtD --info=progress2 --exclude='ubuntu' "${ISO_MOUNT}/" "${USB_MOUNT}/"
 
+        # Verify critical boot files were copied
+        log "── Verifying USB boot files ──"
+        echo "  ISO EFI contents:"
+        ls -la "${ISO_MOUNT}/EFI/BOOT/" 2>/dev/null || echo "  [NOT FOUND on ISO]"
+        echo ""
+        echo "  USB EFI contents:"
+        ls -la "${USB_MOUNT}/EFI/BOOT/" 2>/dev/null || echo "  [NOT FOUND on USB]"
+        echo ""
+        echo "  ISO GRUB config (first 5 lines):"
+        head -5 "${ISO_MOUNT}/boot/grub/grub.cfg" 2>/dev/null || echo "  [NOT FOUND]"
+        echo ""
+        echo "  USB GRUB config (first 5 lines):"
+        head -5 "${USB_MOUNT}/boot/grub/grub.cfg" 2>/dev/null || echo "  [NOT FOUND]"
+        echo ""
+        for f in BOOTx64.EFI grubx64.efi shimx64.efi mmx64.efi; do
+            if [[ -f "${USB_MOUNT}/EFI/BOOT/${f}" ]]; then
+                SIZE=$(stat -c%s "${USB_MOUNT}/EFI/BOOT/${f}" 2>/dev/null || echo "?")
+                log "  OK: EFI/BOOT/${f} (${SIZE} bytes)"
+            else
+                log "  MISSING: EFI/BOOT/${f}"
+            fi
+        done
+        echo ""
+
         log "Unmounting ISO"
         sudo umount "${ISO_MOUNT}" 2>/dev/null || true
         rmdir "${ISO_MOUNT}" 2>/dev/null || true
