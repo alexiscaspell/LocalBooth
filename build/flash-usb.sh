@@ -197,11 +197,26 @@ log "Unmounting ${DEVICE}"
 if [[ "${OS}" == "Darwin" ]]; then
     diskutil unmountDisk "${DEVICE}" 2>/dev/null || true
 else
-    # Unmount all partitions of this device
-    for part in "${DEVICE}"?*; do
-        sudo umount "${part}" 2>/dev/null || true
+    # Kill any processes using the device
+    sudo fuser -km "${DEVICE}" 2>/dev/null || true
+    for part in "${DEVICE}"?* "${DEVICE}p"?*; do
+        [[ -b "${part}" ]] || continue
+        sudo fuser -km "${part}" 2>/dev/null || true
+        sudo umount -f "${part}" 2>/dev/null || true
     done
-    sudo umount "${DEVICE}" 2>/dev/null || true
+    sudo umount -f "${DEVICE}" 2>/dev/null || true
+    sleep 1
+
+    # Verify nothing is still mounted
+    if mount | grep -q "${DEVICE}"; then
+        log "WARN: device still mounted — forcing lazy unmount"
+        for part in "${DEVICE}"?* "${DEVICE}p"?*; do
+            [[ -b "${part}" ]] || continue
+            sudo umount -l "${part}" 2>/dev/null || true
+        done
+        sudo umount -l "${DEVICE}" 2>/dev/null || true
+        sleep 2
+    fi
 fi
 
 # ── Write to USB ─────────────────────────────────────────────────────
@@ -238,7 +253,21 @@ if [[ "${WRITABLE}" == "true" ]]; then
         sudo wipefs -af "${DEVICE}"
         log "Partitioning ${DEVICE} as MBR + FAT32"
         echo ',,0C,*' | sudo sfdisk --force --label dos --wipe always "${DEVICE}"
-        sudo mkfs.vfat -F 32 -n LOCALBOOTH "${DEVICE}1"
+
+        # Tell the kernel to re-read the partition table
+        sudo partprobe "${DEVICE}" 2>/dev/null || sudo blockdev --rereadpt "${DEVICE}" 2>/dev/null || true
+        sleep 2
+
+        # Format with retry in case the kernel hasn't released the old mount
+        if ! sudo mkfs.vfat -F 32 -n LOCALBOOTH "${DEVICE}1" 2>/dev/null; then
+            log "WARN: mkfs failed, retrying after unmount..."
+            sudo umount -f "${DEVICE}1" 2>/dev/null || true
+            sudo umount -l "${DEVICE}1" 2>/dev/null || true
+            sleep 2
+            sudo partprobe "${DEVICE}" 2>/dev/null || true
+            sleep 1
+            sudo mkfs.vfat -F 32 -n LOCALBOOTH "${DEVICE}1"
+        fi
 
         USB_MOUNT=$(mktemp -d)
         ISO_MOUNT=$(mktemp -d)
