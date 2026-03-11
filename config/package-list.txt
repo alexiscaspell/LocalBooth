@@ -1,28 +1,19 @@
-# LocalBooth — packages to include in the offline USB installer.
-# One package per line. Comments and blank lines are ignored.
-# These packages (and all their dependencies) will be downloaded
-# by packages/download-packages.sh and served from the local repo.
+# LocalBooth — base packages installed via apt before MakeInstall runs.
+# MakeInstall (github.com/alexiscaspell/MakeInstall) handles the rest:
+# Docker, Terraform, Terragrunt, kubectl, Python, AWS CLI, Cursor, SSH.
 
-# --- container runtime ---
-docker.io
-
-# --- version control ---
+# --- prerequisites for MakeInstall ---
 git
-
-# --- networking / transfer ---
+make
 curl
+wget
 ca-certificates
 gnupg
-
-# --- build toolchain ---
-build-essential
-
-# --- JSON / archive utilities ---
-jq
+software-properties-common
+lsb-release
 unzip
+jq
 
-# --- system monitoring ---
+# --- system utilities ---
 htop
-
-# --- SSH server (pulled by autoinstall, listed here for the local repo) ---
-openssh-server
+vim
