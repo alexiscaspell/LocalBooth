@@ -150,22 +150,20 @@ cat >> "${OUTPUT}" <<'USERDATA'
 USERDATA
 
 if [[ "${INSTALL_INTERACTIVE}" == "yes" ]]; then
-    log "Interactive mode enabled — adding TUI to early-commands (gated by lb.configure)"
+    log "Interactive mode enabled — adding TUI to early-commands"
     cat >> "${OUTPUT}" <<'USERDATA'
     - |
-      # Only run the TUI when the "Configure" GRUB entry was selected
-      # (it passes lb.configure as a kernel parameter).
-      if grep -q lb.configure /proc/cmdline; then
-        mount -o remount,rw /cdrom 2>/dev/null || true
-        if command -v openvt >/dev/null 2>&1; then
-          openvt -s -w -- bash /cdrom/scripts/interactive-config.sh
-        elif command -v chvt >/dev/null 2>&1; then
-          chvt 2
-          bash /cdrom/scripts/interactive-config.sh </dev/tty2 >/dev/tty2 2>&1
-          chvt 1
-        else
-          bash /cdrom/scripts/interactive-config.sh </dev/tty1 >/dev/tty1 2>&1
-        fi
+      # Remount /cdrom read-write so the TUI can update user-data on the USB
+      mount -o remount,rw /cdrom 2>/dev/null || true
+      # Launch TUI on a visible virtual terminal
+      if command -v openvt >/dev/null 2>&1; then
+        openvt -s -w -- bash /cdrom/scripts/interactive-config.sh
+      elif command -v chvt >/dev/null 2>&1; then
+        chvt 2
+        bash /cdrom/scripts/interactive-config.sh </dev/tty2 >/dev/tty2 2>&1
+        chvt 1
+      else
+        bash /cdrom/scripts/interactive-config.sh </dev/tty1 >/dev/tty1 2>&1
       fi
 USERDATA
 fi

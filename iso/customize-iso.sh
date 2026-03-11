@@ -128,77 +128,20 @@ if [[ -d "${EXTRAS_SRC}" ]]; then
 fi
 
 # ── Patch GRUB — add autoinstall kernel parameter ─────────────────────
-# We patch the existing grub.cfg rather than replacing it so that all
-# original module loads, root device search, and Secure Boot directives
-# are preserved.
 log "Patching GRUB configuration"
 GRUB_CFG="${EXTRACT_DIR}/boot/grub/grub.cfg"
 
-log "DEBUG: INSTALL_INTERACTIVE='${INSTALL_INTERACTIVE:-<unset>}'"
-log "DEBUG: GRUB_CFG path = ${GRUB_CFG}"
-
 if [[ -f "${GRUB_CFG}" ]]; then
-    log "DEBUG: grub.cfg BEFORE patching (first 30 lines):"
-    head -30 "${GRUB_CFG}" | while IFS= read -r line; do log "  > ${line}"; done
-
-    # Extract kernel and initrd paths before modifying anything
-    VMLINUZ=$(awk '/linux/{for(i=1;i<=NF;i++) if($i ~ /^\//){print $i; exit}}' "${GRUB_CFG}")
-    INITRD=$(awk '/initrd/{for(i=1;i<=NF;i++) if($i ~ /^\//){print $i; exit}}' "${GRUB_CFG}")
-    VMLINUZ="${VMLINUZ:-/casper/vmlinuz}"
-    INITRD="${INITRD:-/casper/initrd}"
-    log "Kernel: ${VMLINUZ}  Initrd: ${INITRD}"
-
+    # Insert 'autoinstall' parameter and point to our cloud-init data
+    # The ds=nocloud flag tells cloud-init where to find user-data/meta-data.
+    sed -i 's|---$|autoinstall ds=nocloud\\;s=/cdrom/autoinstall/ ---|g' "${GRUB_CFG}"
     if [[ "${INSTALL_INTERACTIVE}" == "yes" ]]; then
-        # 1. Add autoinstall + lb.configure + quiet to all kernel lines.
-        #    The original entry becomes the "Configure" entry.
-        sed -i 's|---$|quiet autoinstall ds=nocloud\\;s=/cdrom/autoinstall/ lb.configure ---|g' "${GRUB_CFG}"
-
-        # 2. Rename the first menuentry to "Configure Installation"
-        FIRST_MENU_LINE=$(grep -n '^menuentry' "${GRUB_CFG}" | head -1 | cut -d: -f1)
-        if [[ -n "${FIRST_MENU_LINE}" ]]; then
-            sed -i "${FIRST_MENU_LINE}s/^menuentry \"[^\"]*\"/menuentry \"LocalBooth — Configure Installation\"/" "${GRUB_CFG}"
-        fi
-
-        # 3. Remove original timeout (we'll add flag-based logic)
-        sed -i '/^set timeout=.*/d' "${GRUB_CFG}"
-
-        # 4. Prepend flag-file detection block to the config.
-        #    Uses entry title as default (robust against entry count changes).
-        TMPFLAG=$(mktemp)
-        cat > "${TMPFLAG}" <<'FLAGEOF'
-# LocalBooth: auto-select Install after first configuration
-if [ -f /autoinstall/.configured ]; then
-    set default="LocalBooth — Install Ubuntu Server"
-    set timeout=5
-else
-    set default=0
-    set timeout=0
-fi
-
-FLAGEOF
-        cat "${TMPFLAG}" "${GRUB_CFG}" > "${GRUB_CFG}.tmp"
-        mv "${GRUB_CFG}.tmp" "${GRUB_CFG}"
-        rm -f "${TMPFLAG}"
-
-        # 5. Append an "Install" entry at the end (no lb.configure).
-        cat >> "${GRUB_CFG}" <<INSTALLEOF
-
-menuentry "LocalBooth — Install Ubuntu Server" {
-    set gfxpayload=keep
-    linux  ${VMLINUZ} quiet autoinstall ds=nocloud\;s=/cdrom/autoinstall/ ---
-    initrd ${INITRD}
-}
-INSTALLEOF
-        log "GRUB: patched with Configure + Install entries (Secure Boot safe)"
+        # Skip GRUB menu entirely — TUI is the first screen the user sees
+        sed -i 's/^set timeout=.*/set timeout=0/' "${GRUB_CFG}"
+        log "GRUB timeout set to 0 (interactive TUI mode)"
     else
-        log "DEBUG: entering NON-interactive branch"
-        sed -i 's|---$|autoinstall ds=nocloud\\;s=/cdrom/autoinstall/ ---|g' "${GRUB_CFG}"
         sed -i 's/^set timeout=.*/set timeout=1/' "${GRUB_CFG}"
     fi
-
-    log "DEBUG: grub.cfg AFTER patching (first 30 lines):"
-    head -30 "${GRUB_CFG}" | while IFS= read -r line; do log "  > ${line}"; done
-    log "DEBUG: grub.cfg total lines: $(wc -l < "${GRUB_CFG}")"
     log "GRUB patched"
 else
     log "WARN: grub.cfg not found at expected path — you may need to patch it manually"

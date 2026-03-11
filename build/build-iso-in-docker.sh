@@ -100,9 +100,6 @@ if [[ ! -s "${EFI_IMG}" ]]; then
 fi
 log "EFI image extracted: $(du -h "${EFI_IMG}" | cut -f1)"
 
-log "DEBUG: grub.cfg in extract dir BEFORE xorriso (first 30 lines):"
-head -30 "${EXTRACT_DIR}/boot/grub/grub.cfg" 2>/dev/null | while IFS= read -r line; do log "  > ${line}"; done
-
 log "Creating custom ISO: ${OUTPUT_ISO}"
 xorriso -as mkisofs \
     -r -V "LocalBooth" \
