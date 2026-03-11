@@ -197,26 +197,11 @@ log "Unmounting ${DEVICE}"
 if [[ "${OS}" == "Darwin" ]]; then
     diskutil unmountDisk "${DEVICE}" 2>/dev/null || true
 else
-    # Kill any processes using the device
-    sudo fuser -km "${DEVICE}" 2>/dev/null || true
-    for part in "${DEVICE}"?* "${DEVICE}p"?*; do
-        [[ -b "${part}" ]] || continue
-        sudo fuser -km "${part}" 2>/dev/null || true
-        sudo umount -f "${part}" 2>/dev/null || true
+    # Unmount all partitions of this device
+    for part in "${DEVICE}"?*; do
+        sudo umount "${part}" 2>/dev/null || true
     done
-    sudo umount -f "${DEVICE}" 2>/dev/null || true
-    sleep 1
-
-    # Verify nothing is still mounted
-    if mount | grep -q "${DEVICE}"; then
-        log "WARN: device still mounted — forcing lazy unmount"
-        for part in "${DEVICE}"?* "${DEVICE}p"?*; do
-            [[ -b "${part}" ]] || continue
-            sudo umount -l "${part}" 2>/dev/null || true
-        done
-        sudo umount -l "${DEVICE}" 2>/dev/null || true
-        sleep 2
-    fi
+    sudo umount "${DEVICE}" 2>/dev/null || true
 fi
 
 # ── Write to USB ─────────────────────────────────────────────────────
@@ -237,10 +222,7 @@ if [[ "${WRITABLE}" == "true" ]]; then
         fi
 
         log "Copying files to USB (this may take a few minutes)..."
-        # -L follows symlinks (copies actual files). FAT32 can't store symlinks
-        # so -a alone silently skips them, losing EFI bootloader files.
-        # Exclude 'ubuntu' to avoid infinite recursion (ubuntu -> . on the ISO).
-        rsync -rLtD --info=progress2 --exclude='ubuntu' "${ISO_MOUNT}/" "${USB_MOUNT}/"
+        rsync -a --info=progress2 "${ISO_MOUNT}/" "${USB_MOUNT}/"
 
         log "Unmounting ISO"
         hdiutil detach "${ISO_MOUNT}" 2>/dev/null || true
@@ -253,21 +235,7 @@ if [[ "${WRITABLE}" == "true" ]]; then
         sudo wipefs -af "${DEVICE}"
         log "Partitioning ${DEVICE} as MBR + FAT32"
         echo ',,0C,*' | sudo sfdisk --force --label dos --wipe always "${DEVICE}"
-
-        # Tell the kernel to re-read the partition table
-        sudo partprobe "${DEVICE}" 2>/dev/null || sudo blockdev --rereadpt "${DEVICE}" 2>/dev/null || true
-        sleep 2
-
-        # Format with retry in case the kernel hasn't released the old mount
-        if ! sudo mkfs.vfat -F 32 -n LOCALBOOTH "${DEVICE}1" 2>/dev/null; then
-            log "WARN: mkfs failed, retrying after unmount..."
-            sudo umount -f "${DEVICE}1" 2>/dev/null || true
-            sudo umount -l "${DEVICE}1" 2>/dev/null || true
-            sleep 2
-            sudo partprobe "${DEVICE}" 2>/dev/null || true
-            sleep 1
-            sudo mkfs.vfat -F 32 -n LOCALBOOTH "${DEVICE}1"
-        fi
+        sudo mkfs.vfat -F 32 -n LOCALBOOTH "${DEVICE}1"
 
         USB_MOUNT=$(mktemp -d)
         ISO_MOUNT=$(mktemp -d)
@@ -279,34 +247,7 @@ if [[ "${WRITABLE}" == "true" ]]; then
 
         log "Copying files to USB (this may take a few minutes)..."
         log "DO NOT remove the USB until you see 'USB ready'."
-        # -L follows symlinks (copies actual files). --no-links would skip
-        # them entirely, losing EFI bootloader files and APT repo paths.
-        # Exclude 'ubuntu' to avoid infinite recursion (ubuntu -> . on the ISO).
-        sudo rsync -rLtD --info=progress2 --exclude='ubuntu' "${ISO_MOUNT}/" "${USB_MOUNT}/"
-
-        # Verify critical boot files were copied
-        log "── Verifying USB boot files ──"
-        echo "  ISO EFI contents:"
-        ls -la "${ISO_MOUNT}/EFI/BOOT/" 2>/dev/null || echo "  [NOT FOUND on ISO]"
-        echo ""
-        echo "  USB EFI contents:"
-        ls -la "${USB_MOUNT}/EFI/BOOT/" 2>/dev/null || echo "  [NOT FOUND on USB]"
-        echo ""
-        echo "  === ISO GRUB config (FULL) ==="
-        cat "${ISO_MOUNT}/boot/grub/grub.cfg" 2>/dev/null || echo "  [NOT FOUND]"
-        echo ""
-        echo "  === USB GRUB config (FULL) ==="
-        cat "${USB_MOUNT}/boot/grub/grub.cfg" 2>/dev/null || echo "  [NOT FOUND]"
-        echo ""
-        for f in BOOTx64.EFI grubx64.efi shimx64.efi mmx64.efi; do
-            if [[ -f "${USB_MOUNT}/EFI/BOOT/${f}" ]]; then
-                SIZE=$(stat -c%s "${USB_MOUNT}/EFI/BOOT/${f}" 2>/dev/null || echo "?")
-                log "  OK: EFI/BOOT/${f} (${SIZE} bytes)"
-            else
-                log "  MISSING: EFI/BOOT/${f}"
-            fi
-        done
-        echo ""
+        sudo rsync -a --no-links --info=progress2 "${ISO_MOUNT}/" "${USB_MOUNT}/"
 
         log "Unmounting ISO"
         sudo umount "${ISO_MOUNT}" 2>/dev/null || true
