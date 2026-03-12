@@ -201,8 +201,8 @@ if [[ "${INSTALL_PKG_SOURCE}" == "online" ]]; then
     - cp /cdrom/bootstrap/bootstrap.conf /target/tmp/bootstrap.conf || true
     - chmod +x /target/tmp/bootstrap.sh
     - curtin in-target --target=/target -- /tmp/bootstrap.sh
-    # Fix home directory ownership (must run after all chroot operations)
-    - chown -R ${INSTALL_USERNAME}:${INSTALL_USERNAME} /target/home/${INSTALL_USERNAME}
+    # Fix home directory ownership (UID 1000 = first non-root user)
+    - chown -R 1000:1000 /target/home/${INSTALL_USERNAME} || true
 
   shutdown: reboot
 USERDATA
@@ -231,8 +231,8 @@ else
     - cp /cdrom/bootstrap/bootstrap.conf /target/tmp/bootstrap.conf || true
     - chmod +x /target/tmp/bootstrap.sh
     - curtin in-target --target=/target -- /tmp/bootstrap.sh
-    # Fix home directory ownership (must run after all chroot operations)
-    - chown -R ${INSTALL_USERNAME}:${INSTALL_USERNAME} /target/home/${INSTALL_USERNAME}
+    # Fix home directory ownership (UID 1000 = first non-root user)
+    - chown -R 1000:1000 /target/home/${INSTALL_USERNAME} || true
 
   shutdown: reboot
 USERDATA
