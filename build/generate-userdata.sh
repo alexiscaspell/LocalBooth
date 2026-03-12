@@ -101,6 +101,7 @@ cat >> "${OUTPUT}" <<USERDATA
   storage:
     layout:
       name: ${INSTALL_DISK_LAYOUT}
+      reset-partition: true
 
   identity:
     hostname: ${INSTALL_HOSTNAME}
