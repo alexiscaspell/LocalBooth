@@ -223,6 +223,7 @@ if [[ "${WRITABLE}" == "true" ]]; then
 
         log "Copying files to USB (this may take a few minutes)..."
         rsync -a --info=progress2 "${ISO_MOUNT}/" "${USB_MOUNT}/"
+        mkdir -p "${USB_MOUNT}/logs"
 
         log "Unmounting ISO"
         hdiutil detach "${ISO_MOUNT}" 2>/dev/null || true
@@ -248,6 +249,7 @@ if [[ "${WRITABLE}" == "true" ]]; then
         log "Copying files to USB (this may take a few minutes)..."
         log "DO NOT remove the USB until you see 'USB ready'."
         sudo rsync -a --no-links --info=progress2 "${ISO_MOUNT}/" "${USB_MOUNT}/"
+        sudo mkdir -p "${USB_MOUNT}/logs"
 
         log "Unmounting ISO"
         sudo umount "${ISO_MOUNT}" 2>/dev/null || true

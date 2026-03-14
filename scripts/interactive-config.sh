@@ -220,9 +220,15 @@ append_secondary_disk_cmd() {
     if [[ "${INSTALL_SECONDARY_DISK}" == "format" ]]; then
         cat >> "${outfile}" <<'SECONDARYEOF'
     - |
+      LB_LOG=/cdrom/logs/install.log
+      exec > >(tee -a "$LB_LOG") 2>&1
       # Format secondary disk and mount as /data
-      BOOT_DISK=$(findmnt -n -o SOURCE /target | sed 's/[0-9]*$//' | sed 's/p$//')
-      BOOT_DISK=$(basename "${BOOT_DISK}")
+      ROOT_SRC=$(findmnt -n -o SOURCE /target 2>/dev/null)
+      BOOT_DISK=$(lsblk -nso NAME,TYPE "$ROOT_SRC" 2>/dev/null | awk '$2=="disk"{print $1}' | head -1)
+      if [ -z "$BOOT_DISK" ]; then
+        BOOT_DISK=$(echo "$ROOT_SRC" | sed 's|/dev/||' | sed 's/[0-9]*$//' | sed 's/p$//')
+      fi
+      echo "[localbooth] Boot disk detected: ${BOOT_DISK} (from ${ROOT_SRC})"
       SECOND=""
       for dev in /sys/block/sd* /sys/block/nvme* /sys/block/vd*; do
         [ -d "${dev}" ] || continue
@@ -248,6 +254,8 @@ append_secondary_disk_cmd() {
           mount "${PART}" /target/data || true
           chown 1000:1000 /target/data || true
           echo "[localbooth] Secondary disk mounted at /data (UUID=${PART_UUID})"
+        else
+          echo "[localbooth] WARNING: Could not get UUID for ${PART}"
         fi
       else
         echo "[localbooth] No secondary disk found — skipping"

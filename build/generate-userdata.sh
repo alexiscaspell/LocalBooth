@@ -165,8 +165,23 @@ cat >> "${OUTPUT}" <<'USERDATA'
           mount --bind "/cdrom/dists/$CODENAME" /cdrom/dists/unstable 2>/dev/null || true
         fi
       fi
-      # Initialize install log on the USB
+      # Ensure USB is writable for logging
       mount -o remount,rw /cdrom 2>/dev/null || true
+      # Fallback: if /cdrom is the ISO, try the actual USB device
+      if ! touch /cdrom/.lb_write_test 2>/dev/null; then
+        for mp in /media/cdrom /run/archiso/bootmnt; do
+          if [ -d "$mp/autoinstall" ]; then
+            mount -o remount,rw "$mp" 2>/dev/null || true
+            if touch "$mp/.lb_write_test" 2>/dev/null; then
+              rm -f "$mp/.lb_write_test"
+              mount --bind "$mp/logs" /cdrom/logs 2>/dev/null || true
+              break
+            fi
+          fi
+        done
+      else
+        rm -f /cdrom/.lb_write_test
+      fi
       LB_LOG=/cdrom/logs/install.log
       mkdir -p /cdrom/logs 2>/dev/null || true
       {
@@ -178,6 +193,9 @@ cat >> "${OUTPUT}" <<'USERDATA'
         echo ""
         echo "--- Block devices ---"
         lsblk -o NAME,SIZE,TYPE,FSTYPE,MODEL 2>/dev/null || true
+        echo ""
+        echo "--- user-data being used ---"
+        cat /cdrom/autoinstall/user-data 2>/dev/null || true
         echo ""
       } > "$LB_LOG" 2>&1 || true
 USERDATA
@@ -210,15 +228,22 @@ append_secondary_disk_cmd() {
         log "Adding secondary disk formatting late-command"
         cat >> "${OUTPUT}" <<'SECONDARYEOF'
     - |
+      LB_LOG=/cdrom/logs/install.log
+      exec > >(tee -a "$LB_LOG") 2>&1
       # Format secondary disk and mount as /data
-      BOOT_DISK=$(findmnt -n -o SOURCE /target | sed 's/[0-9]*$//' | sed 's/p$//')
-      BOOT_DISK=$(basename "${BOOT_DISK}")
+      # Detect the physical disk where /target is installed (works with LVM too)
+      ROOT_SRC=$(findmnt -n -o SOURCE /target 2>/dev/null)
+      BOOT_DISK=$(lsblk -nso NAME,TYPE "$ROOT_SRC" 2>/dev/null | awk '$2=="disk"{print $1}' | head -1)
+      if [ -z "$BOOT_DISK" ]; then
+        # Fallback: strip partition suffix
+        BOOT_DISK=$(echo "$ROOT_SRC" | sed 's|/dev/||' | sed 's/[0-9]*$//' | sed 's/p$//')
+      fi
+      echo "[localbooth] Boot disk detected: ${BOOT_DISK} (from ${ROOT_SRC})"
       SECOND=""
       for dev in /sys/block/sd* /sys/block/nvme* /sys/block/vd*; do
         [ -d "${dev}" ] || continue
         name=$(basename "${dev}")
         [ "${name}" = "${BOOT_DISK}" ] && continue
-        # Skip USB, loop, and CD-ROM devices
         removable=$(cat "${dev}/removable" 2>/dev/null || echo 1)
         [ "${removable}" = "1" ] && continue
         SECOND="/dev/${name}"
@@ -239,6 +264,8 @@ append_secondary_disk_cmd() {
           mount "${PART}" /target/data || true
           chown 1000:1000 /target/data || true
           echo "[localbooth] Secondary disk mounted at /data (UUID=${PART_UUID})"
+        else
+          echo "[localbooth] WARNING: Could not get UUID for ${PART}"
         fi
       else
         echo "[localbooth] No secondary disk found — skipping"
@@ -254,6 +281,9 @@ if [[ "${INSTALL_PKG_SOURCE}" == "online" ]]; then
     - |
       LB_LOG=/cdrom/logs/install.log
       exec > >(tee -a "\$LB_LOG") 2>&1
+      echo '[localbooth] === late-commands start ==='
+      echo "[localbooth] /target mounted from: \$(findmnt -n -o SOURCE /target 2>/dev/null || echo unknown)"
+      lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT 2>/dev/null || true
       echo '[localbooth] Waiting for network...'
       for i in \$(seq 1 60); do
         if ip route | grep -q default; then

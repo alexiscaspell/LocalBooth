@@ -174,6 +174,9 @@ if [[ -f "${ROOT_DIR}/config/package-list.txt" ]]; then
     cp "${ROOT_DIR}/config/package-list.txt" "${USB_MOUNT}/config/package-list.txt"
 fi
 
+# Pre-create logs directory (installer appends to it at boot)
+mkdir -p "${USB_MOUNT}/logs"
+
 sync
 
 # ── Read config for display ──────────────────────────────────────────
