@@ -24,6 +24,8 @@ DEF_LOCALE="en_US.UTF-8"
 DEF_KEYBOARD="us"
 DEF_TIMEZONE="UTC"
 DEF_DISK_LAYOUT="lvm"
+DEF_DISK="auto"
+DEF_SECONDARY_DISK="none"
 DEF_SSH="yes"
 DEF_PKG_SOURCE="online"
 
@@ -38,6 +40,8 @@ if [[ -f "${CONF_FILE}" ]]; then
     DEF_KEYBOARD="${INSTALL_KEYBOARD:-${DEF_KEYBOARD}}"
     DEF_TIMEZONE="${INSTALL_TIMEZONE:-${DEF_TIMEZONE}}"
     DEF_DISK_LAYOUT="${INSTALL_DISK_LAYOUT:-${DEF_DISK_LAYOUT}}"
+    DEF_DISK="${INSTALL_DISK:-${DEF_DISK}}"
+    DEF_SECONDARY_DISK="${INSTALL_SECONDARY_DISK:-${DEF_SECONDARY_DISK}}"
     DEF_SSH="${INSTALL_SSH:-${DEF_SSH}}"
     DEF_PKG_SOURCE="${INSTALL_PKG_SOURCE:-${DEF_PKG_SOURCE}}"
 fi
@@ -202,6 +206,19 @@ DISK_LAYOUTS=(
     "direct"
 )
 
+DISK_TARGETS=(
+    "auto"
+    "largest"
+    "smallest"
+    "ssd"
+    "hdd"
+)
+
+SECONDARY_DISK_OPTIONS=(
+    "none"
+    "format"
+)
+
 SSH_OPTIONS=(
     "yes"
     "no"
@@ -230,6 +247,10 @@ ask_menu "Locale"          "${DEF_LOCALE}"      "INSTALL_LOCALE"      "${LOCALES
 ask_menu "Keyboard layout" "${DEF_KEYBOARD}"    "INSTALL_KEYBOARD"    "${KEYBOARDS[@]}"
 ask_menu "Timezone"        "${DEF_TIMEZONE}"    "INSTALL_TIMEZONE"    "${TIMEZONES[@]}"
 ask_menu "Disk layout"     "${DEF_DISK_LAYOUT}" "INSTALL_DISK_LAYOUT" "${DISK_LAYOUTS[@]}"
+ask_menu "Install disk (auto=fastest, largest, smallest, ssd, hdd)" \
+                          "${DEF_DISK}"        "INSTALL_DISK"        "${DISK_TARGETS[@]}"
+ask_menu "Secondary disk (format = wipe & mount as /data)" \
+                          "${DEF_SECONDARY_DISK}" "INSTALL_SECONDARY_DISK" "${SECONDARY_DISK_OPTIONS[@]}"
 ask_menu "Enable SSH"      "${DEF_SSH}"         "INSTALL_SSH"         "${SSH_OPTIONS[@]}"
 ask_menu "Package source (online = needs internet during install, offline = bundled in USB)" \
                           "${DEF_PKG_SOURCE}"  "INSTALL_PKG_SOURCE"  "${PKG_SOURCE_OPTIONS[@]}"
@@ -250,6 +271,8 @@ INSTALL_LOCALE="${INSTALL_LOCALE}"
 INSTALL_KEYBOARD="${INSTALL_KEYBOARD}"
 INSTALL_TIMEZONE="${INSTALL_TIMEZONE}"
 INSTALL_DISK_LAYOUT="${INSTALL_DISK_LAYOUT}"
+INSTALL_DISK="${INSTALL_DISK}"
+INSTALL_SECONDARY_DISK="${INSTALL_SECONDARY_DISK}"
 INSTALL_SSH="${INSTALL_SSH}"
 INSTALL_PKG_SOURCE="${INSTALL_PKG_SOURCE}"
 INSTALL_INTERACTIVE="${INSTALL_INTERACTIVE}"
@@ -263,6 +286,8 @@ printf "  │  Locale:      %-34s │\n" "${INSTALL_LOCALE}"
 printf "  │  Keyboard:    %-34s │\n" "${INSTALL_KEYBOARD}"
 printf "  │  Timezone:    %-34s │\n" "${INSTALL_TIMEZONE}"
 printf "  │  Disk layout: %-34s │\n" "${INSTALL_DISK_LAYOUT}"
+printf "  │  Install to:  %-34s │\n" "${INSTALL_DISK}"
+printf "  │  2nd disk:    %-34s │\n" "${INSTALL_SECONDARY_DISK}"
 printf "  │  SSH:         %-34s │\n" "${INSTALL_SSH}"
 printf "  │  Packages:    %-34s │\n" "${INSTALL_PKG_SOURCE}"
 echo "  └──────────────────────────────────────────────────┘"

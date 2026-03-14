@@ -25,6 +25,8 @@ INSTALL_TIMEZONE="UTC"
 INSTALL_DISK_LAYOUT="lvm"
 INSTALL_SSH="yes"
 INSTALL_PKG_SOURCE="online"
+INSTALL_DISK="auto"
+INSTALL_SECONDARY_DISK="none"
 INSTALL_INTERACTIVE="no"
 
 # ── Load config ──────────────────────────────────────────────────────
@@ -97,12 +99,27 @@ else
 USERDATA
 fi
 
+# Build storage section based on disk target
+_storage_match=""
+case "${INSTALL_DISK}" in
+    auto|ssd)  _storage_match="ssd: true" ;;
+    hdd)       _storage_match="ssd: false" ;;
+    largest)   _storage_match="size: largest" ;;
+    smallest)  _storage_match="size: smallest" ;;
+    /dev/*)    _storage_match="path: ${INSTALL_DISK}" ;;
+esac
+
 cat >> "${OUTPUT}" <<USERDATA
   storage:
     layout:
       name: ${INSTALL_DISK_LAYOUT}
       reset-partition: true
+      match:
+        ${_storage_match}
 
+USERDATA
+
+cat >> "${OUTPUT}" <<USERDATA
   identity:
     hostname: ${INSTALL_HOSTNAME}
     username: ${INSTALL_USERNAME}
@@ -172,6 +189,49 @@ fi
 # Blank line after early-commands section
 echo "" >> "${OUTPUT}"
 
+# ── Helper: append secondary disk formatting late-command ─────────────
+append_secondary_disk_cmd() {
+    if [[ "${INSTALL_SECONDARY_DISK}" == "format" ]]; then
+        log "Adding secondary disk formatting late-command"
+        cat >> "${OUTPUT}" <<'SECONDARYEOF'
+    - |
+      # Format secondary disk and mount as /data
+      BOOT_DISK=$(findmnt -n -o SOURCE /target | sed 's/[0-9]*$//' | sed 's/p$//')
+      BOOT_DISK=$(basename "${BOOT_DISK}")
+      SECOND=""
+      for dev in /sys/block/sd* /sys/block/nvme* /sys/block/vd*; do
+        [ -d "${dev}" ] || continue
+        name=$(basename "${dev}")
+        [ "${name}" = "${BOOT_DISK}" ] && continue
+        # Skip USB, loop, and CD-ROM devices
+        removable=$(cat "${dev}/removable" 2>/dev/null || echo 1)
+        [ "${removable}" = "1" ] && continue
+        SECOND="/dev/${name}"
+        break
+      done
+      if [ -n "${SECOND}" ]; then
+        echo "[localbooth] Formatting secondary disk ${SECOND} as ext4"
+        wipefs -af "${SECOND}" || true
+        parted -s "${SECOND}" mklabel gpt mkpart primary ext4 0% 100% || true
+        sleep 1
+        PART="${SECOND}1"
+        [ -b "${SECOND}p1" ] && PART="${SECOND}p1"
+        mkfs.ext4 -F -L data "${PART}" || true
+        PART_UUID=$(blkid -s UUID -o value "${PART}" || true)
+        if [ -n "${PART_UUID}" ]; then
+          mkdir -p /target/data
+          echo "UUID=${PART_UUID} /data ext4 defaults,nofail 0 2" >> /target/etc/fstab
+          mount "${PART}" /target/data || true
+          chown 1000:1000 /target/data || true
+          echo "[localbooth] Secondary disk mounted at /data (UUID=${PART_UUID})"
+        fi
+      else
+        echo "[localbooth] No secondary disk found — skipping"
+      fi
+SECONDARYEOF
+    fi
+}
+
 if [[ "${INSTALL_PKG_SOURCE}" == "online" ]]; then
     log "Mode: ONLINE — packages will be downloaded during install"
     cat >> "${OUTPUT}" <<USERDATA
@@ -203,6 +263,9 @@ if [[ "${INSTALL_PKG_SOURCE}" == "online" ]]; then
     - curtin in-target --target=/target -- /tmp/bootstrap.sh
     # Fix home directory ownership (UID 1000 = first non-root user)
     - chown -R 1000:1000 /target/home/${INSTALL_USERNAME} || true
+USERDATA
+    append_secondary_disk_cmd
+    cat >> "${OUTPUT}" <<USERDATA
 
   shutdown: reboot
 USERDATA
@@ -233,6 +296,9 @@ else
     - curtin in-target --target=/target -- /tmp/bootstrap.sh
     # Fix home directory ownership (UID 1000 = first non-root user)
     - chown -R 1000:1000 /target/home/${INSTALL_USERNAME} || true
+USERDATA
+    append_secondary_disk_cmd
+    cat >> "${OUTPUT}" <<USERDATA
 
   shutdown: reboot
 USERDATA

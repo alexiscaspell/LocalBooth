@@ -50,6 +50,8 @@ INSTALL_LOCALE="en_US.UTF-8"
 INSTALL_KEYBOARD="us"
 INSTALL_TIMEZONE="UTC"
 INSTALL_DISK_LAYOUT="lvm"
+INSTALL_DISK="auto"
+INSTALL_SECONDARY_DISK="none"
 INSTALL_SSH="yes"
 INSTALL_PKG_SOURCE="online"
 
@@ -149,6 +151,31 @@ TIMEZONES=(
 DISK_LAYOUTS=("lvm" "direct")
 SSH_OPTIONS=("yes" "no")
 
+# Build disk target list: abstract criteria + detected devices
+build_disk_targets() {
+    local -a targets=("auto" "largest" "smallest" "ssd" "hdd")
+    for dev in /sys/block/sd* /sys/block/nvme* /sys/block/vd*; do
+        [ -d "${dev}" ] || continue
+        local name
+        name=$(basename "${dev}")
+        local removable
+        removable=$(cat "${dev}/removable" 2>/dev/null || echo 1)
+        [ "${removable}" = "1" ] && continue
+        local size_sectors
+        size_sectors=$(cat "${dev}/size" 2>/dev/null || echo 0)
+        (( size_sectors < 2097152 )) && continue
+        local size_gb=$(( size_sectors / 2097152 ))
+        local rotational
+        rotational=$(cat "${dev}/queue/rotational" 2>/dev/null || echo "?")
+        local dtype="SSD"
+        [ "${rotational}" = "1" ] && dtype="HDD"
+        targets+=("/dev/${name}(${size_gb}GB,${dtype})")
+    done
+    echo "${targets[@]}"
+}
+
+SECONDARY_DISK_OPTIONS=("none" "format")
+
 # ── Run the TUI ──────────────────────────────────────────────────────
 INSTALL_USERNAME=$(wt_input  "Username:" "${INSTALL_USERNAME}")
 INSTALL_PASSWORD=$(wt_password "Password (leave empty to keep current):")
@@ -157,6 +184,12 @@ INSTALL_LOCALE=$(wt_menu    "Locale:"          "${INSTALL_LOCALE}"      "${LOCAL
 INSTALL_KEYBOARD=$(wt_menu  "Keyboard layout:" "${INSTALL_KEYBOARD}"    "${KEYBOARDS[@]}")
 INSTALL_TIMEZONE=$(wt_menu  "Timezone:"        "${INSTALL_TIMEZONE}"    "${TIMEZONES[@]}")
 INSTALL_DISK_LAYOUT=$(wt_menu "Disk layout:"   "${INSTALL_DISK_LAYOUT}" "${DISK_LAYOUTS[@]}")
+
+# Discover available disks at runtime
+read -ra DISK_TARGETS <<< "$(build_disk_targets)"
+INSTALL_DISK=$(wt_menu "Install disk:" "${INSTALL_DISK}" "${DISK_TARGETS[@]}")
+INSTALL_SECONDARY_DISK=$(wt_menu "Secondary disk (format = wipe & mount /data):" "${INSTALL_SECONDARY_DISK}" "${SECONDARY_DISK_OPTIONS[@]}")
+
 INSTALL_SSH=$(wt_menu       "Enable SSH:"      "${INSTALL_SSH}"         "${SSH_OPTIONS[@]}")
 
 # ── Generate password hash ───────────────────────────────────────────
@@ -180,6 +213,48 @@ if [[ -f "${PKG_LIST}" ]]; then
     done < "${PKG_LIST}"
 fi
 PACKAGES_SPACE=$(echo "${PACKAGES_SPACE}" | xargs)
+
+# ── Helper: append secondary disk formatting late-command ─────────────
+append_secondary_disk_cmd() {
+    local outfile="$1"
+    if [[ "${INSTALL_SECONDARY_DISK}" == "format" ]]; then
+        cat >> "${outfile}" <<'SECONDARYEOF'
+    - |
+      # Format secondary disk and mount as /data
+      BOOT_DISK=$(findmnt -n -o SOURCE /target | sed 's/[0-9]*$//' | sed 's/p$//')
+      BOOT_DISK=$(basename "${BOOT_DISK}")
+      SECOND=""
+      for dev in /sys/block/sd* /sys/block/nvme* /sys/block/vd*; do
+        [ -d "${dev}" ] || continue
+        name=$(basename "${dev}")
+        [ "${name}" = "${BOOT_DISK}" ] && continue
+        removable=$(cat "${dev}/removable" 2>/dev/null || echo 1)
+        [ "${removable}" = "1" ] && continue
+        SECOND="/dev/${name}"
+        break
+      done
+      if [ -n "${SECOND}" ]; then
+        echo "[localbooth] Formatting secondary disk ${SECOND} as ext4"
+        wipefs -af "${SECOND}" || true
+        parted -s "${SECOND}" mklabel gpt mkpart primary ext4 0% 100% || true
+        sleep 1
+        PART="${SECOND}1"
+        [ -b "${SECOND}p1" ] && PART="${SECOND}p1"
+        mkfs.ext4 -F -L data "${PART}" || true
+        PART_UUID=$(blkid -s UUID -o value "${PART}" || true)
+        if [ -n "${PART_UUID}" ]; then
+          mkdir -p /target/data
+          echo "UUID=${PART_UUID} /data ext4 defaults,nofail 0 2" >> /target/etc/fstab
+          mount "${PART}" /target/data || true
+          chown 1000:1000 /target/data || true
+          echo "[localbooth] Secondary disk mounted at /data (UUID=${PART_UUID})"
+        fi
+      else
+        echo "[localbooth] No secondary disk found — skipping"
+      fi
+SECONDARYEOF
+    fi
+}
 
 # ── Write user-data ──────────────────────────────────────────────────
 write_userdata() {
@@ -217,11 +292,30 @@ USERDATA
 USERDATA
     fi
 
+    # Strip size/type annotations from TUI device paths, e.g. /dev/sda(500GB,HDD) -> /dev/sda
+    local disk_val="${INSTALL_DISK}"
+    disk_val="${disk_val%%(*}"
+
+    local _match=""
+    case "${disk_val}" in
+        auto|ssd)  _match="ssd: true" ;;
+        hdd)       _match="ssd: false" ;;
+        largest)   _match="size: largest" ;;
+        smallest)  _match="size: smallest" ;;
+        /dev/*)    _match="path: ${disk_val}" ;;
+    esac
+
     cat >> "${outfile}" <<USERDATA
   storage:
     layout:
       name: ${INSTALL_DISK_LAYOUT}
+      reset-partition: true
+      match:
+        ${_match}
 
+USERDATA
+
+    cat >> "${outfile}" <<USERDATA
   identity:
     hostname: ${INSTALL_HOSTNAME}
     username: ${INSTALL_USERNAME}
@@ -260,6 +354,9 @@ USERDATA
     - cp /cdrom/bootstrap/bootstrap.conf /target/tmp/bootstrap.conf || true
     - chmod +x /target/tmp/bootstrap.sh
     - curtin in-target --target=/target -- /tmp/bootstrap.sh
+USERDATA
+        append_secondary_disk_cmd "${outfile}"
+        cat >> "${outfile}" <<USERDATA
 
   shutdown: reboot
 USERDATA
@@ -284,6 +381,9 @@ USERDATA
     - cp /cdrom/bootstrap/bootstrap.conf /target/tmp/bootstrap.conf || true
     - chmod +x /target/tmp/bootstrap.sh
     - curtin in-target --target=/target -- /tmp/bootstrap.sh
+USERDATA
+        append_secondary_disk_cmd "${outfile}"
+        cat >> "${outfile}" <<USERDATA
 
   shutdown: reboot
 USERDATA
@@ -315,6 +415,8 @@ INSTALL_LOCALE="${INSTALL_LOCALE}"
 INSTALL_KEYBOARD="${INSTALL_KEYBOARD}"
 INSTALL_TIMEZONE="${INSTALL_TIMEZONE}"
 INSTALL_DISK_LAYOUT="${INSTALL_DISK_LAYOUT}"
+INSTALL_DISK="${INSTALL_DISK}"
+INSTALL_SECONDARY_DISK="${INSTALL_SECONDARY_DISK}"
 INSTALL_SSH="${INSTALL_SSH}"
 INSTALL_PKG_SOURCE="${INSTALL_PKG_SOURCE}"
 EOF
@@ -331,6 +433,8 @@ and the install will start automatically with:\n\n\
   Keyboard: ${INSTALL_KEYBOARD}\n\
   Timezone: ${INSTALL_TIMEZONE}\n\
   Disk:     ${INSTALL_DISK_LAYOUT}\n\
+  Target:   ${INSTALL_DISK}\n\
+  2nd disk: ${INSTALL_SECONDARY_DISK}\n\
   SSH:      ${INSTALL_SSH}\n\
   Packages: ${INSTALL_PKG_SOURCE}" \
     20 ${COLS} <"${TTY}" >"${TTY}"
