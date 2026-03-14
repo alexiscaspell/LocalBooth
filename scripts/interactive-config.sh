@@ -220,15 +220,14 @@ append_secondary_disk_cmd() {
     if [[ "${INSTALL_SECONDARY_DISK}" == "format" ]]; then
         cat >> "${outfile}" <<'SECONDARYEOF'
     - |
-      LB_LOG=/cdrom/logs/install.log
-      exec > >(tee -a "$LB_LOG") 2>&1
+      lb_log() { echo "[localbooth] $*"; echo "[localbooth] $*" >> /cdrom/logs/install.log 2>/dev/null || true; }
       # Format secondary disk and mount as /data
       ROOT_SRC=$(findmnt -n -o SOURCE /target 2>/dev/null)
       BOOT_DISK=$(lsblk -nso NAME,TYPE "$ROOT_SRC" 2>/dev/null | awk '$2=="disk"{print $1}' | head -1)
       if [ -z "$BOOT_DISK" ]; then
         BOOT_DISK=$(echo "$ROOT_SRC" | sed 's|/dev/||' | sed 's/[0-9]*$//' | sed 's/p$//')
       fi
-      echo "[localbooth] Boot disk detected: ${BOOT_DISK} (from ${ROOT_SRC})"
+      lb_log "Boot disk detected: ${BOOT_DISK} (from ${ROOT_SRC})"
       SECOND=""
       for dev in /sys/block/sd* /sys/block/nvme* /sys/block/vd*; do
         [ -d "${dev}" ] || continue
@@ -240,7 +239,7 @@ append_secondary_disk_cmd() {
         break
       done
       if [ -n "${SECOND}" ]; then
-        echo "[localbooth] Formatting secondary disk ${SECOND} as ext4"
+        lb_log "Formatting secondary disk ${SECOND} as ext4"
         wipefs -af "${SECOND}" || true
         parted -s "${SECOND}" mklabel gpt mkpart primary ext4 0% 100% || true
         sleep 1
@@ -253,12 +252,12 @@ append_secondary_disk_cmd() {
           echo "UUID=${PART_UUID} /data ext4 defaults,nofail 0 2" >> /target/etc/fstab
           mount "${PART}" /target/data || true
           chown 1000:1000 /target/data || true
-          echo "[localbooth] Secondary disk mounted at /data (UUID=${PART_UUID})"
+          lb_log "Secondary disk mounted at /data (UUID=${PART_UUID})"
         else
-          echo "[localbooth] WARNING: Could not get UUID for ${PART}"
+          lb_log "WARNING: Could not get UUID for ${PART}"
         fi
       else
-        echo "[localbooth] No secondary disk found — skipping"
+        lb_log "No secondary disk found — skipping"
       fi
 SECONDARYEOF
     fi
@@ -339,45 +338,48 @@ USERDATA
         cat >> "${outfile}" <<USERDATA
   late-commands:
     - |
-      LB_LOG=/cdrom/logs/install.log
-      exec > >(tee -a "\$LB_LOG") 2>&1
-      echo '[localbooth] Waiting for network...'
-      for i in \$(seq 1 60); do
+      lb_log() { echo "[localbooth] \\\$*"; echo "[localbooth] \\\$*" >> /cdrom/logs/install.log 2>/dev/null || true; }
+      lb_log "=== late-commands start ==="
+      lb_log "Waiting for network (up to 180s)..."
+      for i in \$(seq 1 90); do
         if ip route | grep -q default; then
-          echo "[localbooth] Network ready (attempt \$i)"
+          lb_log "Network ready (attempt \$i)"
           break
         fi
         for iface in \$(ls /sys/class/net/ | grep -E '^(en|eth)'); do
           ip link set "\$iface" up 2>/dev/null || true
-          dhclient "\$iface" 2>/dev/null || true
         done
+        if [ \$((i % 5)) -eq 0 ]; then
+          for iface in \$(ls /sys/class/net/ | grep -E '^(en|eth)'); do
+            dhclient "\$iface" 2>/dev/null || true
+          done
+        fi
         sleep 2
       done
       if ! ip route | grep -q default; then
-        echo '[localbooth] WARNING: No network after 120s'
+        lb_log "WARNING: No network after 180s"
       fi
-    - curtin in-target --target=/target -- apt-get update
-    - curtin in-target --target=/target -- apt-get install -y ${PACKAGES_SPACE}
+    - curtin in-target --target=/target -- apt-get update || true
+    - curtin in-target --target=/target -- apt-get install -y ${PACKAGES_SPACE} || true
     - curtin in-target --target=/target -- usermod -aG docker ${INSTALL_USERNAME} || true
     - cp /cdrom/bootstrap/bootstrap.sh /target/tmp/bootstrap.sh
     - cp /cdrom/bootstrap/bootstrap.conf /target/tmp/bootstrap.conf || true
     - chmod +x /target/tmp/bootstrap.sh
-    - curtin in-target --target=/target -- /tmp/bootstrap.sh
+    - curtin in-target --target=/target -- /tmp/bootstrap.sh || true
 USERDATA
         append_secondary_disk_cmd "${outfile}"
         cat >> "${outfile}" <<'USERDATA'
     - |
-      LB_LOG=/cdrom/logs/install.log
-      exec > >(tee -a "$LB_LOG") 2>&1
-      echo "[localbooth] Install finished: $(date)"
-      echo ""
-      echo "--- Copying installer logs to USB ---"
+      lb_log() { echo "[localbooth] $*"; echo "[localbooth] $*" >> /cdrom/logs/install.log 2>/dev/null || true; }
+      lb_log "Install finished: $(date)"
+      lb_log "--- Copying installer logs to USB ---"
       mkdir -p /cdrom/logs/installer 2>/dev/null || true
       cp -r /var/log/installer/* /cdrom/logs/installer/ 2>/dev/null || true
       cp /target/var/log/cloud-init*.log /cdrom/logs/ 2>/dev/null || true
-      echo "--- Final disk state ---"
+      lb_log "--- Final disk state ---"
+      lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT >> /cdrom/logs/install.log 2>/dev/null || true
       lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT 2>/dev/null || true
-      echo "=========================================="
+      lb_log "=========================================="
       sync
 
   shutdown: reboot
@@ -393,8 +395,8 @@ USERDATA
     - echo 'deb [trusted=yes] file:///mnt/repo ./' > /target/etc/apt/sources.list
     - mkdir -p /target/mnt/repo
     - mount --bind /cdrom/repo /target/mnt/repo
-    - curtin in-target --target=/target -- apt-get update
-    - curtin in-target --target=/target -- apt-get install -y --no-install-recommends ${PACKAGES_SPACE}
+    - curtin in-target --target=/target -- apt-get update || true
+    - curtin in-target --target=/target -- apt-get install -y --no-install-recommends ${PACKAGES_SPACE} || true
     - umount /target/mnt/repo
     - rm -f /target/etc/apt/sources.list
     - mv /target/etc/apt/sources.list.d/ubuntu.sources.bak /target/etc/apt/sources.list.d/ubuntu.sources || true
@@ -402,22 +404,21 @@ USERDATA
     - cp /cdrom/bootstrap/bootstrap.sh /target/tmp/bootstrap.sh
     - cp /cdrom/bootstrap/bootstrap.conf /target/tmp/bootstrap.conf || true
     - chmod +x /target/tmp/bootstrap.sh
-    - curtin in-target --target=/target -- /tmp/bootstrap.sh
+    - curtin in-target --target=/target -- /tmp/bootstrap.sh || true
 USERDATA
         append_secondary_disk_cmd "${outfile}"
         cat >> "${outfile}" <<'USERDATA'
     - |
-      LB_LOG=/cdrom/logs/install.log
-      exec > >(tee -a "$LB_LOG") 2>&1
-      echo "[localbooth] Install finished: $(date)"
-      echo ""
-      echo "--- Copying installer logs to USB ---"
+      lb_log() { echo "[localbooth] $*"; echo "[localbooth] $*" >> /cdrom/logs/install.log 2>/dev/null || true; }
+      lb_log "Install finished: $(date)"
+      lb_log "--- Copying installer logs to USB ---"
       mkdir -p /cdrom/logs/installer 2>/dev/null || true
       cp -r /var/log/installer/* /cdrom/logs/installer/ 2>/dev/null || true
       cp /target/var/log/cloud-init*.log /cdrom/logs/ 2>/dev/null || true
-      echo "--- Final disk state ---"
+      lb_log "--- Final disk state ---"
+      lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT >> /cdrom/logs/install.log 2>/dev/null || true
       lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT 2>/dev/null || true
-      echo "=========================================="
+      lb_log "=========================================="
       sync
 
   shutdown: reboot
