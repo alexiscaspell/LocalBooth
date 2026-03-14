@@ -165,6 +165,21 @@ cat >> "${OUTPUT}" <<'USERDATA'
           mount --bind "/cdrom/dists/$CODENAME" /cdrom/dists/unstable 2>/dev/null || true
         fi
       fi
+      # Initialize install log on the USB
+      mount -o remount,rw /cdrom 2>/dev/null || true
+      LB_LOG=/cdrom/logs/install.log
+      mkdir -p /cdrom/logs 2>/dev/null || true
+      {
+        echo "=========================================="
+        echo "[localbooth] Install started: $(date)"
+        echo "=========================================="
+        echo "Kernel: $(uname -r)"
+        echo "Boot cmdline: $(cat /proc/cmdline)"
+        echo ""
+        echo "--- Block devices ---"
+        lsblk -o NAME,SIZE,TYPE,FSTYPE,MODEL 2>/dev/null || true
+        echo ""
+      } > "$LB_LOG" 2>&1 || true
 USERDATA
 
 if [[ "${INSTALL_INTERACTIVE}" == "yes" ]]; then
@@ -236,15 +251,15 @@ if [[ "${INSTALL_PKG_SOURCE}" == "online" ]]; then
     log "Mode: ONLINE — packages will be downloaded during install"
     cat >> "${OUTPUT}" <<USERDATA
   late-commands:
-    # Wait for network — USB-C/USB ethernet adapters may take time to initialize
     - |
+      LB_LOG=/cdrom/logs/install.log
+      exec > >(tee -a "\$LB_LOG") 2>&1
       echo '[localbooth] Waiting for network...'
       for i in \$(seq 1 60); do
         if ip route | grep -q default; then
           echo "[localbooth] Network ready (attempt \$i)"
           break
         fi
-        # Try to bring up any ethernet interface via DHCP
         for iface in \$(ls /sys/class/net/ | grep -E '^(en|eth)'); do
           ip link set "\$iface" up 2>/dev/null || true
           dhclient "\$iface" 2>/dev/null || true
@@ -256,16 +271,27 @@ if [[ "${INSTALL_PKG_SOURCE}" == "online" ]]; then
       fi
     - curtin in-target --target=/target -- apt-get update
     - curtin in-target --target=/target -- apt-get install -y ${PACKAGES_SPACE}
-    # Run bootstrap (user setup, git defaults, aliases, services)
     - cp /cdrom/bootstrap/bootstrap.sh /target/tmp/bootstrap.sh
     - cp /cdrom/bootstrap/bootstrap.conf /target/tmp/bootstrap.conf || true
     - chmod +x /target/tmp/bootstrap.sh
     - curtin in-target --target=/target -- /tmp/bootstrap.sh
-    # Fix home directory ownership (UID 1000 = first non-root user)
     - chown -R 1000:1000 /target/home/${INSTALL_USERNAME} || true
 USERDATA
     append_secondary_disk_cmd
-    cat >> "${OUTPUT}" <<USERDATA
+    cat >> "${OUTPUT}" <<'USERDATA'
+    - |
+      LB_LOG=/cdrom/logs/install.log
+      exec > >(tee -a "$LB_LOG") 2>&1
+      echo "[localbooth] Install finished: $(date)"
+      echo ""
+      echo "--- Copying installer logs to USB ---"
+      mkdir -p /cdrom/logs/installer 2>/dev/null || true
+      cp -r /var/log/installer/* /cdrom/logs/installer/ 2>/dev/null || true
+      cp /target/var/log/cloud-init*.log /cdrom/logs/ 2>/dev/null || true
+      echo "--- Final disk state ---"
+      lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT 2>/dev/null || true
+      echo "=========================================="
+      sync
 
   shutdown: reboot
 USERDATA
@@ -294,11 +320,23 @@ else
     - cp /cdrom/bootstrap/bootstrap.conf /target/tmp/bootstrap.conf || true
     - chmod +x /target/tmp/bootstrap.sh
     - curtin in-target --target=/target -- /tmp/bootstrap.sh
-    # Fix home directory ownership (UID 1000 = first non-root user)
     - chown -R 1000:1000 /target/home/${INSTALL_USERNAME} || true
 USERDATA
     append_secondary_disk_cmd
-    cat >> "${OUTPUT}" <<USERDATA
+    cat >> "${OUTPUT}" <<'USERDATA'
+    - |
+      LB_LOG=/cdrom/logs/install.log
+      exec > >(tee -a "$LB_LOG") 2>&1
+      echo "[localbooth] Install finished: $(date)"
+      echo ""
+      echo "--- Copying installer logs to USB ---"
+      mkdir -p /cdrom/logs/installer 2>/dev/null || true
+      cp -r /var/log/installer/* /cdrom/logs/installer/ 2>/dev/null || true
+      cp /target/var/log/cloud-init*.log /cdrom/logs/ 2>/dev/null || true
+      echo "--- Final disk state ---"
+      lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT 2>/dev/null || true
+      echo "=========================================="
+      sync
 
   shutdown: reboot
 USERDATA

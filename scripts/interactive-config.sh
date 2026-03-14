@@ -330,8 +330,9 @@ USERDATA
     if [[ "${INSTALL_PKG_SOURCE}" == "online" ]]; then
         cat >> "${outfile}" <<USERDATA
   late-commands:
-    # Wait for network
     - |
+      LB_LOG=/cdrom/logs/install.log
+      exec > >(tee -a "\$LB_LOG") 2>&1
       echo '[localbooth] Waiting for network...'
       for i in \$(seq 1 60); do
         if ip route | grep -q default; then
@@ -356,7 +357,20 @@ USERDATA
     - curtin in-target --target=/target -- /tmp/bootstrap.sh
 USERDATA
         append_secondary_disk_cmd "${outfile}"
-        cat >> "${outfile}" <<USERDATA
+        cat >> "${outfile}" <<'USERDATA'
+    - |
+      LB_LOG=/cdrom/logs/install.log
+      exec > >(tee -a "$LB_LOG") 2>&1
+      echo "[localbooth] Install finished: $(date)"
+      echo ""
+      echo "--- Copying installer logs to USB ---"
+      mkdir -p /cdrom/logs/installer 2>/dev/null || true
+      cp -r /var/log/installer/* /cdrom/logs/installer/ 2>/dev/null || true
+      cp /target/var/log/cloud-init*.log /cdrom/logs/ 2>/dev/null || true
+      echo "--- Final disk state ---"
+      lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT 2>/dev/null || true
+      echo "=========================================="
+      sync
 
   shutdown: reboot
 USERDATA
@@ -383,7 +397,20 @@ USERDATA
     - curtin in-target --target=/target -- /tmp/bootstrap.sh
 USERDATA
         append_secondary_disk_cmd "${outfile}"
-        cat >> "${outfile}" <<USERDATA
+        cat >> "${outfile}" <<'USERDATA'
+    - |
+      LB_LOG=/cdrom/logs/install.log
+      exec > >(tee -a "$LB_LOG") 2>&1
+      echo "[localbooth] Install finished: $(date)"
+      echo ""
+      echo "--- Copying installer logs to USB ---"
+      mkdir -p /cdrom/logs/installer 2>/dev/null || true
+      cp -r /var/log/installer/* /cdrom/logs/installer/ 2>/dev/null || true
+      cp /target/var/log/cloud-init*.log /cdrom/logs/ 2>/dev/null || true
+      echo "--- Final disk state ---"
+      lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT 2>/dev/null || true
+      echo "=========================================="
+      sync
 
   shutdown: reboot
 USERDATA
