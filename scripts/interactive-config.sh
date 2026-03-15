@@ -223,38 +223,51 @@ append_secondary_disk_cmd() {
       lb_log() { echo "[localbooth] $*"; echo "[localbooth] $*" >> /cdrom/logs/install.log 2>/dev/null || true; }
       # Format secondary disk and mount as /data
       ROOT_SRC=$(findmnt -n -o SOURCE /target 2>/dev/null)
-      BOOT_DISK=$(lsblk -nso NAME,TYPE "$ROOT_SRC" 2>/dev/null | awk '$2=="disk"{print $1}' | head -1)
+      BOOT_DISK=$(lsblk -nsPo NAME,TYPE "$ROOT_SRC" 2>/dev/null \
+        | grep 'TYPE="disk"' | head -1 \
+        | sed 's/.*NAME="\([^"]*\)".*/\1/' | sed 's|/dev/||')
       if [ -z "$BOOT_DISK" ]; then
         BOOT_DISK=$(echo "$ROOT_SRC" | sed 's|/dev/||' | sed 's/[0-9]*$//' | sed 's/p$//')
       fi
       lb_log "Boot disk detected: ${BOOT_DISK} (from ${ROOT_SRC})"
+      PROTECTED_DISKS=""
+      for mnt in $(findmnt -rn -o SOURCE --target /target 2>/dev/null; findmnt -rn -o SOURCE /target/boot 2>/dev/null; findmnt -rn -o SOURCE /target/boot/efi 2>/dev/null); do
+        pdisk=$(lsblk -nsPo NAME,TYPE "$mnt" 2>/dev/null | grep 'TYPE="disk"' | head -1 | sed 's/.*NAME="\([^"]*\)".*/\1/' | sed 's|/dev/||')
+        [ -n "$pdisk" ] && PROTECTED_DISKS="$PROTECTED_DISKS $pdisk"
+      done
+      PROTECTED_DISKS="$PROTECTED_DISKS $BOOT_DISK"
+      lb_log "Protected disks: ${PROTECTED_DISKS}"
       SECOND=""
       for dev in /sys/block/sd* /sys/block/nvme* /sys/block/vd*; do
         [ -d "${dev}" ] || continue
         name=$(basename "${dev}")
-        [ "${name}" = "${BOOT_DISK}" ] && continue
+        echo "$PROTECTED_DISKS" | grep -qw "$name" && continue
         removable=$(cat "${dev}/removable" 2>/dev/null || echo 1)
         [ "${removable}" = "1" ] && continue
         SECOND="/dev/${name}"
         break
       done
       if [ -n "${SECOND}" ]; then
-        lb_log "Formatting secondary disk ${SECOND} as ext4"
-        wipefs -af "${SECOND}" || true
-        parted -s "${SECOND}" mklabel gpt mkpart primary ext4 0% 100% || true
-        sleep 1
-        PART="${SECOND}1"
-        [ -b "${SECOND}p1" ] && PART="${SECOND}p1"
-        mkfs.ext4 -F -L data "${PART}" || true
-        PART_UUID=$(blkid -s UUID -o value "${PART}" || true)
-        if [ -n "${PART_UUID}" ]; then
-          mkdir -p /target/data
-          echo "UUID=${PART_UUID} /data ext4 defaults,nofail 0 2" >> /target/etc/fstab
-          mount "${PART}" /target/data || true
-          chown 1000:1000 /target/data || true
-          lb_log "Secondary disk mounted at /data (UUID=${PART_UUID})"
+        if findmnt -rn | grep -q "^${SECOND}.*\/target"; then
+          lb_log "ABORT: ${SECOND} has partitions mounted under /target — refusing to format"
         else
-          lb_log "WARNING: Could not get UUID for ${PART}"
+          lb_log "Formatting secondary disk ${SECOND} as ext4"
+          wipefs -af "${SECOND}" || true
+          parted -s "${SECOND}" mklabel gpt mkpart primary ext4 0% 100% || true
+          sleep 2
+          PART="${SECOND}1"
+          [ -b "${SECOND}p1" ] && PART="${SECOND}p1"
+          mkfs.ext4 -F -L data "${PART}" || true
+          PART_UUID=$(blkid -s UUID -o value "${PART}" 2>/dev/null || true)
+          if [ -n "${PART_UUID}" ]; then
+            mkdir -p /target/data
+            echo "UUID=${PART_UUID} /data ext4 defaults,nofail 0 2" >> /target/etc/fstab
+            mount "${PART}" /target/data || true
+            chown 1000:1000 /target/data || true
+            lb_log "Secondary disk mounted at /data (UUID=${PART_UUID})"
+          else
+            lb_log "WARNING: Could not get UUID for ${PART}"
+          fi
         fi
       else
         lb_log "No secondary disk found — skipping"
